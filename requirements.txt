@@ -13,3 +13,5 @@ ruamel.yaml==0.18.10
 scipy==1.13.1
 nessai
 healpy
+eryn
+pywavelet==0.2.7  # 0.2.8+ imports astropy APIs newer than the astropy pin above

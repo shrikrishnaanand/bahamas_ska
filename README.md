@@ -34,6 +34,10 @@ We also provide the option to include data gaps, which represent periods during 
 
 The algorithm provides flexibility to perform analyses with either full-resolution data or coarse-grained data over different chunks. In the former case, the likelihood describing the data follows a [Whittle](https://api.semanticscholar.org/CorpusID:125739077) distribution in each segment, while in the latter, it collapses to a [Gamma](https://www.aanda.org/articles/aa/pdf/2003/49/aa0401.pdf) distribution with degrees of freedom equal to the number of bins used in the averaging process.
 
+### Wavelet-domain analysis (optional)
+
+As an alternative to the chunked analysis, the galactic foreground can be analysed in the Wilson-Daubechies-Meyer (WDM) wavelet domain ([Cornish 2020](https://arxiv.org/abs/2009.00043), [Digman & Cornish 2022](https://arxiv.org/abs/2212.04600)). Set `domain: 'wavelet'` in the config (see `template/config_wavelet.yaml`, or `template/config_wavelet_quick.yaml` for a laptop-sized run) and use the same `bahamas_data` / `bahamas_inference` commands with `template/pe_galaxy_cyclo.yaml`. The data are then simulated as one continuous time series, and the wavelet coefficients are modelled with variance $[P_c(t)\,S_\mathrm{gal}(f) + S_n(f)]/(2\,\Delta t)$. The power modulation $P_c(t)$ of each TDI channel is either the parametric sky envelope used by the chunked analysis (`modulation: 'parametric'`), or a sum of a variable number of wavelet atoms in $\log P_c(t)$ (`modulation: 'wavelets'`), sampled with reversible-jump MCMC in [Eryn](https://github.com/mikekatz04/Eryn). The posterior on the number of atoms gives the Bayes factor versus the number of wavelets. Like the chunked pipeline, the transform, simulation and likelihood are written in JAX: the likelihood is jit-compiled and vectorised over walkers, and the fixed-dimension models (`parametric`, `none`) can also be sampled with NUTS (`sampler: 'NUTS'`).
+
 ## Sources
 
 This plot shows the types of signals you can simulate using `bahamas`. The galactic foreground can be generated and analyzed in both stationary and non-stationary assumption.

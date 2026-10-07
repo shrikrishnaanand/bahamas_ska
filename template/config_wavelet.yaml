@@ -1,0 +1,53 @@
+# Wavelet-domain (WDM) analysis of a cyclostationary galactic foreground.
+# Use with template/pe_galaxy_cyclo.yaml:
+#   bahamas_data      --config config_wavelet.yaml --sources pe_galaxy_cyclo.yaml
+#   bahamas_inference --config config_wavelet.yaml --sources pe_galaxy_cyclo.yaml
+
+domain: 'wavelet' #select the wavelet-domain pipeline (default: 'stft', the chunked pipeline)
+
+T: 31557600.0 #observation time in seconds
+dt: 10 #time step in seconds
+gen2: True
+t0: 0 #start time in seconds (sets the orbital phase of the modulation)
+
+#frange
+f1: 0.0001 #minimum frequency in Hz
+f2: 0.029 #maximum frequency in Hz
+
+folder_plot: '../data/'
+
+wavelet: #section dedicated to the WDM representation
+  Nf: 4096 #number of frequency bins: dF = 1/(2 Nf dt), dT = Nf dt
+  nx: 4.0 #steepness of the WDM window
+  channels: [0, 1] #TDI channels (0 = A, 1 = E)
+  seed: 42 #seed of the simulated noise
+  file: '../data/data_wavelet' #file to store the wavelet coefficients
+  freq_bins: 200 #log-spaced frequency bins (Gamma likelihood); null for the per-pixel Gaussian likelihood
+  edge_bins: 4 #time bins dropped at each end (the transform wraps around)
+  time_bin: 4 #consecutive time bins summed together (the modulation is slow): 4 x 11.4 h here
+  band_samples: 8 #sub-samples per pixel to band-average the PSD
+
+inference: #section dedicated to the inference process
+  sampler: 'eryn' #'eryn' (any modulation, required for 'wavelets') or 'NUTS' (NumPyro; 'parametric' and 'none' only)
+  #warmup: 1000 #NUTS only: warmup samples
+  #samples: 2000 #NUTS only: samples
+  #chains: 1 #NUTS only
+  #chain_method: 'parallel' #NUTS only
+  #adapt_matrix: True #NUTS only
+  modulation: 'wavelets' #'wavelets' (reversible jump over the number of atoms), 'parametric' (sky envelope), 'none'
+  wavelet_shape: 'gaussian' #atom shape in log P(t): 'gaussian' or 'ricker'
+  min_wavelets: 0 #minimum number of atoms per channel
+  max_wavelets: 15 #maximum number of atoms per channel (raise it if the posterior piles up here)
+  width_range_days: [5, 180] #prior range of atom widths in days (log-uniform)
+  amp_range: [-3, 3] #prior range of atom amplitudes in log P
+  level_range: [-2, 2] #prior range of the log level of channels after the first
+  atom_step: 0.02 #random-walk step of the atoms (fraction of the prior width)
+  nwalkers: 32 #walkers per temperature
+  ntemps: 2 #temperatures (tempering helps the reversible jump mix)
+  nsteps: 5000 #stored steps
+  burnin: 1000 #discarded steps
+  thin: 1
+  init: 'injected' #'injected' (small ball around the injected values) or 'prior'
+  seed: 1
+  file: '../data/data_wavelet' #file to read the data
+  file_post: '../data/result_wavelet.npz' #file to store the posterior samples

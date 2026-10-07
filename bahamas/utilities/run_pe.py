@@ -31,6 +31,20 @@ def main():
 
     # Initialize the backend based on the --use_jax argument
     initialize_backend(use_jax=args.use_jax)
+
+    # Wavelet-domain (WDM) inference has its own pipeline
+    import yaml
+    with open(args.config, "r") as file:
+        config = yaml.safe_load(file)
+    if config.get('domain', 'stft') == 'wavelet':
+        from bahamas.wavelet import pipeline as wavelet_pipeline
+        with open(args.sources, "r") as file:
+            sources = yaml.safe_load(file)['sources']
+        logger.info(f"Running wavelet-domain inference with config: {args.config} and sources: {args.sources}")
+        wavelet_pipeline.run_inference(config, sources)
+        logger.info("Results saved to: %s", config['inference']["file_post"])
+        return
+
     from bahamas import bahamas_inference
 
     if args.use_jax:

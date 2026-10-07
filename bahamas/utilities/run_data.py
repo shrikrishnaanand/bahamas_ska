@@ -24,7 +24,14 @@ def main():
     args = bahamas_data.parse_arguments()
     config = bahamas_data.load_yaml(args.config)
     sources = bahamas_data.load_yaml(args.sources)['sources']
-    
+
+    # Wavelet-domain (WDM) data: continuous time series instead of chunks
+    from bahamas.wavelet import pipeline as wavelet_pipeline
+    if wavelet_pipeline.is_wavelet(config):
+        wavelet_pipeline.generate_data(config, sources)
+        logger.info("Processing completed.")
+        return
+
     # Initialize and process signals
     processor = bahamas_data.SignalProcessor(config, sources)
     processor.handle_series()

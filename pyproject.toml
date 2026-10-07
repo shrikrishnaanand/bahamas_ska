@@ -7,7 +7,7 @@ name = "bahamas"
 version = "0.1.2"
 description = "BAyesian HAmiltonian Montecarlo Analysis for Stochastic gravitational wave signal"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { text = "Apache License 2.0" }
 
 authors = [
@@ -41,6 +41,12 @@ dependencies = [
   "eryn"
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pywavelet"
+]
+
 [project.urls]
 Homepage = "https://github.com/FedericoPozzoli/bahamas"
 Repository = "https://github.com/FedericoPozzoli/bahamas.git"
@@ -59,7 +65,8 @@ packages = [
   "bahamas.psd_strain",
   "bahamas.psd_response",
   "bahamas.method",
-  "bahamas.utilities"
+  "bahamas.utilities",
+  "bahamas.wavelet"
 ]
 
 [tool.setuptools.package-data]

@@ -5,7 +5,11 @@ It uses a Gaussian distribution with specified standard deviations along two pri
 rotated with respect to the latitude and longitude.
 The function `envelopes_gaussian` computes the envelopes based on the provided parameters.
 """
-import numpy as np
+from bahamas.backend_context import get_backend_components
+# Load backend components after backend initialization
+jnp, jit, lax = get_backend_components()
+if jnp is None:
+    import numpy as jnp
 
 
 def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinPsi, LISA_Orbital_Freq, t, alpha0 = 0., beta0 = 0.):
@@ -29,17 +33,17 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     SigmaSqSum = Sigma1 + Sigma2
     SigmaSqDiff = Sigma1 - Sigma2
 
-    cosPsi = np.sqrt(1. - sinPsi * sinPsi)
+    cosPsi = jnp.sqrt(1. - sinPsi * sinPsi)
     SigmaSqCos = SigmaSqDiff * cosPsi
     SigmaSqSin = SigmaSqDiff * sinPsi
     SigmaSqPlus = SigmaSqSum + SigmaSqCos
 
-    fact1b0 = np.exp(-0.25 * SigmaSqPlus)
-    fact3b = np.exp(-2. * SigmaSqPlus)
-    fact5b = np.exp(-6. * SigmaSqPlus)
+    fact1b0 = jnp.exp(-0.25 * SigmaSqPlus)
+    fact3b = jnp.exp(-2. * SigmaSqPlus)
+    fact5b = jnp.exp(-6. * SigmaSqPlus)
 
-    coshHalfSigmaSqSin = np.cosh(0.5 * SigmaSqSin)
-    sinhHalfSigmaSqSin = np.sinh(0.5 * SigmaSqSin)
+    coshHalfSigmaSqSin = jnp.cosh(0.5 * SigmaSqSin)
+    sinhHalfSigmaSqSin = jnp.sinh(0.5 * SigmaSqSin)
 
     coshSigmaSqSin = coshHalfSigmaSqSin * coshHalfSigmaSqSin + sinhHalfSigmaSqSin * sinhHalfSigmaSqSin
     sinhSigmaSqSin = 2. * coshHalfSigmaSqSin * sinhHalfSigmaSqSin
@@ -71,15 +75,15 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     cosh10SigmaSqSin = cosh5SigmaSqSin * cosh5SigmaSqSin + sinh5SigmaSqSin * sinh5SigmaSqSin
     sinh10SigmaSqSin = 2. * cosh5SigmaSqSin * sinh5SigmaSqSin
 
-    root3 = np.sqrt(3.)
+    root3 = jnp.sqrt(3.)
 
-    phiL = 2. * np.pi * LISA_Orbital_Freq * t
+    phiL = 2. * jnp.pi * LISA_Orbital_Freq * t
     DphiL = phiL - (EclipticLongitude - alpha0)
 
-    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + np.pi / 12.)
+    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.)
 
     sbM = EclipticLatitude #sin Ecliptic Latitude
-    cbM = np.sqrt(1. - sbM * sbM)
+    cbM = jnp.sqrt(1. - sbM * sbM)
     s2bM = 2. * sbM * cbM
     c2bM = cbM * cbM - sbM * sbM
 
@@ -89,8 +93,8 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     s5bM = s2bM * c3bM + c2bM * s3bM
     c5bM = c2bM * c3bM - s2bM * s3bM
 
-    sDphiL = np.sin(DphiL)
-    cDphiL = np.cos(DphiL)
+    sDphiL = jnp.sin(DphiL)
+    cDphiL = jnp.cos(DphiL)
 
     s2DphiL = 2. * sDphiL * cDphiL
     c2DphiL = cDphiL * cDphiL - sDphiL * sDphiL
@@ -101,8 +105,8 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     s4DphiL = s3DphiL * cDphiL + c3DphiL * sDphiL
     c4DphiL = c3DphiL * cDphiL - s3DphiL * sDphiL
 
-    s4phiMbar = np.sin(FourphiMbar)
-    c4phiMbar = np.cos(FourphiMbar)
+    s4phiMbar = jnp.sin(FourphiMbar)
+    c4phiMbar = jnp.cos(FourphiMbar)
 
     sDphiL_4phiMbar = sDphiL * c4phiMbar + cDphiL * s4phiMbar
     cDphiL_4phiMbar = cDphiL * c4phiMbar - sDphiL * s4phiMbar
@@ -128,10 +132,10 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     s8DphiL_4phiMbar = sDphiL * c7DphiL_4phiMbar + cDphiL * s7DphiL_4phiMbar
     c8DphiL_4phiMbar = cDphiL * c7DphiL_4phiMbar - sDphiL * s7DphiL_4phiMbar
 
-    fact1DphiL = root3 * np.exp(-0.5 * SigmaSqSum)
-    fact2DphiL = np.exp(-1.25 * SigmaSqSum + 0.75 * SigmaSqCos)
-    fact3DphiL = root3 * np.exp(-2.5 * SigmaSqSum + 2. * SigmaSqCos)
-    fact4DphiL = np.exp(-4.25 * SigmaSqSum + 3.75 * SigmaSqCos)
+    fact1DphiL = root3 * jnp.exp(-0.5 * SigmaSqSum)
+    fact2DphiL = jnp.exp(-1.25 * SigmaSqSum + 0.75 * SigmaSqCos)
+    fact3DphiL = root3 * jnp.exp(-2.5 * SigmaSqSum + 2. * SigmaSqCos)
+    fact4DphiL = jnp.exp(-4.25 * SigmaSqSum + 3.75 * SigmaSqCos)
 
     overall_factor = 1. / 10240.
 
@@ -197,14 +201,14 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
                           - 9. * (cosh10SigmaSqSin * c8DphiL_4phiMbar * c5bM - sinh10SigmaSqSin * s8DphiL_4phiMbar * s5bM))
 
     Diff *= overall_factor
-    A0 = np.sqrt(0.5 * np.abs(Sum + Diff))
-    E0 = np.sqrt(0.5 * np.abs(Sum - Diff))
+    A0 = jnp.sqrt(0.5 * jnp.abs(Sum + Diff))
+    E0 = jnp.sqrt(0.5 * jnp.abs(Sum - Diff))
 
-    sDect = np.sin(2. * (beta0 - alpha0))
-    cDect = np.cos(2. * (beta0 - alpha0))
+    sDect = jnp.sin(2. * (beta0 - alpha0))
+    cDect = jnp.cos(2. * (beta0 - alpha0))
 
-    A = np.abs(cDect * A0 - sDect * E0)
-    E = np.abs(sDect * A0 + cDect * E0)
+    A = jnp.abs(cDect * A0 - sDect * E0)
+    E = jnp.abs(sDect * A0 + cDect * E0)
 
     return A, E
 
