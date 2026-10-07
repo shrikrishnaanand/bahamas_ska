@@ -15,7 +15,8 @@ import numpy as np
 import jax
 import numpyro
 
-from bahamas.bahamas_data import average_log_chunks, get_colormap_colors
+from bahamas.bahamas_data import get_colormap_colors
+from bahamas.method.setting_data import average_log_chunks
 
 import logging
 

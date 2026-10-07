@@ -85,7 +85,7 @@ def average_log_chunks(freqs, data, response, num_bins=50):
     f_avg, d_avg, r_avg, count = [], [], [], []
 
     for i in range(num_bins):
-        mask = (freqs <= log_bins[i]) & (freqs < log_bins[i + 1])
+        mask = (freqs >= log_bins[i]) & (freqs < log_bins[i + 1])
         if np.any(mask):
             f_avg.append(0.5 * (freqs[mask][0] + freqs[mask][-1]))
             d_avg.append(np.mean(data[mask]))
