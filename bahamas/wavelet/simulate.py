@@ -141,7 +141,7 @@ def _positive(func):
     return lambda f: jnp.where(f > 0, func(jnp.where(f > 0, f, 1.0)), 0.0)
 
 
-def simulate_channels(sources, N, dt, channels, gen2, t0=0.0, seed=None):
+def simulate_channels(sources, N, dt, channels, gen2, t0=0.0, seed=None, modulation=None):
     """
     Simulate continuous time series for several TDI channels.
 
@@ -153,6 +153,9 @@ def simulate_channels(sources, N, dt, channels, gen2, t0=0.0, seed=None):
         gen2 (bool): Second-generation TDI.
         t0 (float): Start time in seconds (sets the orbital phase of the modulation).
         seed (int or key, optional): Random seed.
+        modulation (callable, optional): ``modulation(t, channel)`` returning ``P_c(t)``,
+            used instead of the sky envelope of ``galactic_DWD_time`` (e.g. to inject
+            a known wavelet modulation).
 
     Returns:
         jax.Array: Time series of shape (len(channels), N).
@@ -169,7 +172,8 @@ def simulate_channels(sources, N, dt, channels, gen2, t0=0.0, seed=None):
         x = stationary_gaussian(_positive(lambda f: stationary(f, c)), N, dt, k_noise)
         if galaxy is not None:
             g = stationary_gaussian(_positive(galaxy), N, dt, k_gal)
-            P = jnp.interp(t, t_coarse, power_modulation(envelope, t_coarse, c))
+            P_coarse = power_modulation(envelope, t_coarse, c) if modulation is None else modulation(t_coarse, c)
+            P = jnp.interp(t, t_coarse, P_coarse)
             x = x + jnp.sqrt(P) * g
         return x
 
