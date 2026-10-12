@@ -35,9 +35,11 @@ def test_average_envelopes_gaussian_exact_value():
         LISA_Orbital_Freq, alpha0, beta0, tdi
     )
 
-    # Expected value (computed manually or using a simplified version of the function)
-    # This is a placeholder value; replace it with the actual computed value
-    expected_value = 2.0844846240337227  # Replace with the exact value
+    # Expected value: Gaussian average of the point-source coefficients of Buscicchio et al. 2024 (arXiv:2410.08263,
+    # App. A), computed independently of this function (data/needlet_patches/paper_terms_check.py), which agrees with
+    # the function to 1e-10. Before the transcription fix (cosh -> sinh, missing exp(-2 sigma_+^2) and
+    # exp(-6 sigma_+^2) factors) the function returned 2.0844846240337227.
+    expected_value = 2.5628499759670995
 
     # Assert that the result matches the expected value within a tolerance
     assert jnp.isclose(result, expected_value, atol=1e-5), f"Expected {expected_value}, got {result}"
