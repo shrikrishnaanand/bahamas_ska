@@ -1,0 +1,34 @@
+# Data and inference settings of the OG (chunked) pipeline for the 30-day analysis,
+# taken from the cyclo pack-2 setup (Gamma likelihood, nessai). The file paths below are
+# placeholders: the OG driver sets them to outputs/<run>/og/ when it runs.
+T: 2592000  #observation time in seconds
+dt: 10 #time step in seconds
+nseg: 1000 #number of segments
+mod: 'log' #method to coarse grain the data
+gen2: false
+
+response_num: false #flag to compute the response function to a anisotropic, stationary, and Gaussian SGWB
+
+chunk: #section dedicated to the chunk of data
+  duration: 1296000 #duration of the chunk in seconds
+  taper: 0.05 #Tukey taper (fraction) of each chunk before the FFT, against spectral leakage (og.py, data_checks.py)
+
+#frange
+f1: 0.0001 #minimum frequency in Hz
+f2: 0.029 #maximum frequency in Hz
+
+#file to store and read data (set by the OG driver)
+file: null #file to store full data
+fileAV: null #file to store coarse grained data
+folder_plot: null
+
+inference:
+  sampler: "nested"
+  likelihood: "Gamma"
+  nlive: 2000
+  n_pool: 8
+  checkpointing: true
+  checkpoint_on_training: true
+  flow_config:
+  file: null
+  file_post: null

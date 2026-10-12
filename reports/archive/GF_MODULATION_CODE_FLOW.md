@@ -1,3 +1,6 @@
+> **Archived.** Old stage (sin ψ = −0.99, Riccardo's OG run). Its notebook and outputs moved to
+> [data/archive/stage1-2_psi099/](../../data/archive/stage1-2_psi099/); the links below point to the old locations.
+
 # Galactic-foreground modulation: code flow
 
 How the Fig. 7-type time-domain modulated Galactic foreground (GF) is produced in

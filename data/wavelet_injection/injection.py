@@ -1,16 +1,17 @@
 """
 Stage 3: injection and recovery with the wavelet-domain RJMCMC pipeline on the cyclo pack-2 setup (30 d).
 
-Two injections, same noise realisation (same seed), same data settings as Riccardo's pack-2 run:
+Two injections, same noise realisation (same seed), same data settings as the pack-2 run of paper 2:
 
-- ``run1`` (``injection='wavelet'``): the stage-2 best-fit wavelet modulation of the true GF envelope
-  (``wavelet_fit_reference.npz``), written in the inference parametrisation (b_A = 0 absorbed into amp)::
+- ``run1`` (``injection='wavelet'``): the best-fit wavelet modulation of the true GF envelope
+  (``outputs/reference/atoms.npz``, made by ``fit_reference.py``), in the inference parametrisation
+  (b_A = 0 absorbed into amp)::
 
       log P_A(t) = sum_k a_k psi((t - t_k) / tau_k),   log P_E(t) = level_E + sum_k a_k psi(...),   amp = amp_eff
 
   The wavelet model can represent this exactly: a pure recovery test.
 - ``run2`` (``injection='sky'``): the true GF envelope P_c(t) = M_c^2(t) of the pack-2 sky parameters with the
-  true amplitude, i.e. the signal Riccardo's chunked (OG) analysis was run on. Used for the OG comparison.
+  true amplitude (``config/sources.yaml``). Used for the OG comparison.
 
 The data are one continuous time series x_c(t) = n_c(t) + sqrt(P_c(t)) g_c(t), transformed to the WDM domain.
 Both runs are analysed with the same wavelet model and priors. Used by the notebooks in this folder; also a script::
@@ -33,19 +34,24 @@ from bahamas.wavelet.model import WaveletData, WaveletLikelihood, WaveletModulat
 from bahamas.wavelet.sampler import WaveletPosterior, WaveletSampler, modulation_draws, _sampled
 from bahamas.wavelet.simulate import simulate_channels, power_modulation, ENVELOPE_PARAMS
 from bahamas.wavelet.pipeline import wdm_shape
+from eryn.state import State
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-REFERENCE = os.path.join(ROOT, 'data', 'cyclo_fig7_outputs', 'wavelet_fit_reference.npz')
-SOURCES_OG = os.path.join(ROOT, 'cyclo_riccardo', 'cyclo', 'pe_pack2_cyclo.yaml')
-OG_RESULT = os.path.join(ROOT, 'cyclo_riccardo', 'cyclo', 'result.hdf5')
 OUT = os.path.join(HERE, 'outputs')
+REFERENCE = os.path.join(OUT, 'reference', 'atoms.npz')
+SOURCES = os.path.join(HERE, 'config', 'sources.yaml')
 
-# Same data settings as Riccardo's pack-2 analysis (T = 30 d, dt = 10 s, 0.1-29 mHz, TDI gen 1)
+# Same data settings as the pack-2 analysis of paper 2 (T = 30 d, dt = 10 s, 0.1-29 mHz, TDI gen 1).
+# Nf = 3600 gives Nt = 72 pixels of 10 h, i.e. exactly the 30 days (2 x 15-day chunks) the OG pipeline analyses.
+# pad_days: the series is simulated with this much extra data on each side and then cut, so its ends do not wrap
+# around (the simulator draws a circular, i.e. periodic, series), as for real data.
+# edge_bins = 2: the periodic WDM transform biases only the first and last two 10-h pixels (data_checks.py), so the
+# likelihood drops 20 h at each end and analyses 0.8-29.2 d.
 CONFIG = {
-    'T': 2592000.0, 'dt': 10.0, 't0': 0.0, 'gen2': False, 'f1': 1e-4, 'f2': 0.029,
-    'wavelet': {'Nf': 4096, 'nx': 4.0, 'channels': [0, 1], 'seed': 2026,
-                'freq_bins': 200, 'edge_bins': 4, 'time_bin': 2, 'band_samples': 8},
+    'T': 2592000.0, 'dt': 10.0, 't0': 0.0, 'gen2': False, 'f1': 1e-4, 'f2': 0.029, 'pad_days': 2.0,
+    'wavelet': {'Nf': 3600, 'nx': 4.0, 'channels': [0, 1], 'seed': 2026,
+                'freq_bins': 200, 'edge_bins': 2, 'time_bin': 2, 'band_samples': 8},
     'inference': {'wavelet_shape': 'gaussian', 'min_wavelets': 0, 'max_wavelets': 8,
                   'width_range_days': [5.0, 60.0], 'amp_range': [-3.0, 3.0], 'level_range': [-3.0, 3.0],
                   'atom_step': 0.02, 'nwalkers': 32, 'ntemps': 4, 'nsteps': 6000, 'burnin': 2000,
@@ -54,16 +60,16 @@ CONFIG = {
 
 
 def load_reference(path=REFERENCE):
-    """Inference-parametrisation values of the stage-2 fit over the 30-day window."""
+    """Inference-parametrisation values of the wavelet fit to the true envelope (``fit_reference.py``)."""
     r = np.load(path)
-    return {'atoms': {'A': r['pack2_A_atoms'], 'E': r['pack2_E_atoms']},
-            'amp': float(r['pack2_amp_eff']), 'level_E': float(r['pack2_level_E']),
-            't0': float(r['pack2_t0']), 'T': float(r['pack2_T'])}
+    return {'atoms': {'A': r['atoms_A'], 'E': r['atoms_E']},
+            'amp': float(r['amp_eff']), 'level_E': float(r['level_E']),
+            't0': float(r['t0']), 'T': float(r['T'])}
 
 
 def og_sources():
-    """Sources of Riccardo's pack-2 run (true amplitude and sky parameters)."""
-    with open(SOURCES_OG) as f:
+    """Injected values and priors (``config/sources.yaml``): true amplitude and sky parameters."""
+    with open(SOURCES) as f:
         return yaml.safe_load(f)['sources']
 
 
@@ -85,7 +91,7 @@ def remap_atoms(atoms, t0_fit, T_fit, t0, T):
 def inference_sources(ref):
     """Sampled sources: OG spectral parameters without the sky parameters; amp referenced to ``amp_eff``.
 
-    The wavelet model fixes b_A = 0, so the amplitude it measures is amp_eff = amp + b_A / ln 10 (stage 2).
+    The wavelet model fixes b_A = 0, so the amplitude it measures is amp_eff = amp + b_A / ln 10 (fit_reference.py).
     Using amp_eff as the injected value only sets the initial ball and the reference of ``galactic_power``.
     """
     src = copy.deepcopy(og_sources())
@@ -100,7 +106,7 @@ class Injection:
     """
     Injected modulation ``P(t, channel)`` and its galactic amplitude.
 
-    ``kind='wavelet'``: stage-2 atoms (posterior ``t_frac`` convention), amp = amp_eff.
+    ``kind='wavelet'``: reference-fit atoms (posterior ``t_frac`` convention), amp = amp_eff.
     ``kind='sky'``: M_c^2(t) of the pack-2 sky parameters, amp = true amp.
     ``P_rel(t, c)`` is the injected galactic power relative to ``amp_ref`` (the posterior reference, amp_eff),
     the quantity returned by ``modulation_draws``.
@@ -135,8 +141,8 @@ def injection_for(kind, data, config=CONFIG, ref=None):
     return Injection(kind, ref, data.t0, data.Nt * data.Nf * data.dt, config['inference']['wavelet_shape'])
 
 
-def simulate(kind, config=CONFIG, path=None):
-    """Simulate the 30-day series with the chosen injection and save the WDM coefficients."""
+def simulate_series(kind, config=CONFIG, seed=None):
+    """The 30-day series x (channels, N) with the chosen injection, and the Injection. ``seed`` overrides the config."""
     ref = load_reference()
     wcfg = config['wavelet']
     dt, Nf = config['dt'], wcfg['Nf']
@@ -150,16 +156,45 @@ def simulate(kind, config=CONFIG, path=None):
             p['injected'] = inj.amp
     # kind='sky': the simulator builds M_c^2 from the sky parameters itself (modulation=None)
     modulation = inj.P if kind == 'wavelet' else None
-    x = simulate_channels(src, N, dt, wcfg['channels'], config['gen2'], t0=config['t0'],
-                          seed=wcfg['seed'], modulation=modulation)
+    pad = int(round(config['pad_days'] * DAY / dt))
+    x = simulate_channels(src, N + 2 * pad, dt, wcfg['channels'], config['gen2'], t0=config['t0'] - pad * dt,
+                          seed=wcfg['seed'] if seed is None else seed, modulation=modulation)[:, pad:pad + N]
+    return np.asarray(x), inj
 
-    times = config['t0'] + np.arange(Nt) * Nf * dt
+
+def to_wavelet(x, inj, config=CONFIG):
+    """WDM transform of the series, with the injected P at the pixel times."""
+    wcfg = config['wavelet']
+    Nt = x.shape[1] // wcfg['Nf']
+    times = config['t0'] + np.arange(Nt) * wcfg['Nf'] * config['dt']
     P = np.stack([np.asarray(inj.P(times, c)) for c in wcfg['channels']])
-    data = WaveletData.from_time_series(x, dt, Nf, wcfg['nx'], wcfg['channels'], config['t0'],
+    return WaveletData.from_time_series(x, config['dt'], wcfg['Nf'], wcfg['nx'], wcfg['channels'], config['t0'],
                                         {'times': times, 'P': P})
+
+
+def simulate(kind, config=CONFIG, path=None):
+    """
+    Simulate the 30-day series with the chosen injection and save the WDM coefficients (``path``) and the time
+    series itself (``timeseries.npz`` next to it; the OG pipeline reads it).
+    """
+    wcfg, dt = config['wavelet'], config['dt']
+    x, inj = simulate_series(kind, config)
+    data = to_wavelet(x, inj, config)
     if path:
         data.save(path)
+        np.savez(timeseries_path(os.path.dirname(path)), x=np.asarray(x), dt=dt, t0=config['t0'],
+                 channels=np.asarray(wcfg['channels']))
     return data, inj
+
+
+def timeseries_path(run_path):
+    return os.path.join(run_path, 'timeseries.npz')
+
+
+def load_timeseries(tag):
+    """The simulated series of run ``tag``: (x of shape (channels, N), dt, t0)."""
+    r = np.load(timeseries_path(os.path.join(OUT, tag)))
+    return r['x'], float(r['dt']), float(r['t0'])
 
 
 def build_posterior(data, config=CONFIG):
@@ -170,7 +205,7 @@ def build_posterior(data, config=CONFIG):
     post = WaveletPosterior(like, inference_sources(ref), modulation='wavelets', gen2=config['gen2'],
                             wavelet_shape=icfg['wavelet_shape'], level_range=tuple(icfg['level_range']),
                             max_wavelets=icfg['max_wavelets'])
-    # level_E is appended by WaveletPosterior with injected value 0: use the stage-2 value
+    # level_E is appended by WaveletPosterior with injected value 0: use the reference-fit value
     # (exact for run 1, the best wavelet approximation for run 2)
     for p in post.psd_params:
         if p.name == 'level_E':
@@ -249,6 +284,48 @@ def run(kind, tag, config=CONFIG, nsteps=None, burnin=None, ntemps=None, progres
     return res, post, data, inj
 
 
+def k_trace_path(tag):
+    return os.path.join(OUT, tag, 'k_trace.npz')
+
+
+def run_k_trace(kind, tag, config=CONFIG, progress=True):
+    """
+    Rerun the sampler of ``run`` storing the burn-in too, and save K of every walker and temperature at every step
+    (``outputs/<tag>/k_trace.npz``). ``chains.npz`` is left untouched.
+
+    ``run`` passes ``burn`` to eryn, which runs the burn-in with ``store=False`` and keeps no record of it. Here the
+    burn-in and the production steps are two stored ``run_mcmc`` calls instead. Storing draws no random numbers, so
+    with the same seeds this is the same chain, and the saved ``matches_chains`` flag checks that against ``chains.npz``.
+    """
+    data, inj = load_or_simulate(kind, tag, config)
+    like, post = build_posterior(data, config)
+    sampler = make_sampler(post, config)
+    icfg = config['inference']
+    burnin, nsteps = icfg['burnin'], icfg['nsteps']
+    t = time.time()
+    coords, inds = sampler.initial_state()
+    es = sampler.sampler
+    log_prior = es.compute_log_prior(coords, inds=inds)
+    log_like = es.compute_log_like(coords, inds=inds, logp=log_prior)[0]
+    state = State(coords, inds=inds, log_like=log_like, log_prior=log_prior)
+    state = es.run_mcmc(state, burnin, progress=progress)
+    es.run_mcmc(state, nsteps, progress=progress)
+
+    out = {'burnin': burnin, 'nsteps': nsteps, 'nwalkers': sampler.nwalkers, 'ntemps': sampler.ntemps,
+           'betas': es.get_betas(), 'log_like': es.get_log_like(), 'runtime_s': time.time() - t,
+           'K_true': np.array([len(inj.atoms[c]) for c in post.channel_names]) if kind == 'wavelet' else np.array([])}
+    all_inds = es.get_inds()
+    for name in post.channel_names:
+        out[f'K_{name}'] = all_inds[f'mod_{name}'].sum(axis=-1)       # (burnin + nsteps, ntemps, nwalkers)
+    chains = os.path.join(OUT, tag, 'chains.npz')
+    if os.path.exists(chains):
+        ref = np.load(chains)
+        out['matches_chains'] = all(np.array_equal(out[f'K_{c}'][burnin:, 0].ravel(), ref[f'mod_{c}_nleaves'])
+                                    for c in post.channel_names)
+    np.savez(k_trace_path(tag), **out)
+    return out
+
+
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
@@ -257,7 +334,14 @@ if __name__ == '__main__':
     ap.add_argument('--nsteps', type=int)
     ap.add_argument('--burnin', type=int)
     ap.add_argument('--ntemps', type=int)
+    ap.add_argument('--rerun-data', action='store_true', help='simulate again even if outputs/<tag>/data.h5 exists')
+    ap.add_argument('--k-trace', action='store_true',
+                    help='rerun storing the burn-in and save K of every walker per step (outputs/<tag>/k_trace.npz)')
     a = ap.parse_args()
-    res, *_ = run(a.injection, a.tag, nsteps=a.nsteps, burnin=a.burnin, ntemps=a.ntemps)
+    if a.k_trace:
+        out = run_k_trace(a.injection, a.tag)
+        print(f"done in {out['runtime_s'] / 60:.1f} min; reproduces chains.npz: {out.get('matches_chains')}")
+        raise SystemExit
+    res, *_ = run(a.injection, a.tag, nsteps=a.nsteps, burnin=a.burnin, ntemps=a.ntemps, rerun_data=a.rerun_data)
     print(f"done in {res['runtime_s'] / 60:.1f} min; median log L = {np.median(res['log_like']):.2f}"
           + (f", log L(true) = {res['loglike_true']:.2f}" if 'loglike_true' in res else ''))

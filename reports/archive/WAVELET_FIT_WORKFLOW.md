@@ -1,3 +1,6 @@
+> **Archived.** Old stage (sin ψ = −0.99, Riccardo's OG run). Its notebook and outputs moved to
+> [data/archive/stage1-2_psi099/](../../data/archive/stage1-2_psi099/); the links below point to the old locations.
+
 # Wavelet fit to the GF modulation: code workflow
 
 **Stage 2** of the cyclo / Fig. 7 project. The question: can the wavelet modulation model of

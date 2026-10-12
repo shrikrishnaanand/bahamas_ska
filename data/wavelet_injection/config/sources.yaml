@@ -1,0 +1,41 @@
+# Injected values and prior bounds of the 30-day (pack-2) analysis, shared by the wavelet and OG pipelines.
+# Taken from the cyclo pack-2 setup of paper 2 (arXiv:2511.03604); sin(psi) = -0.83 as in the paper.
+sources:
+  galactic_DWD_time:
+  - name: "alpha"
+    bounds: [1., 2.]
+    injected: 1.8
+  - name: "amp"
+    bounds: [-47, -40]
+    injected: -43.94309514866353
+  - name: "fknee"
+    bounds: [-4, -1.8]
+    injected: -2.177
+  - name: "fr1"
+    bounds: [-4, -1.8]
+    injected: -2.429
+  - name: "fr2"
+    bounds: [-4, -1.8]
+    injected: -3.487854923626168
+  - name: "lat"
+    bounds: [-1, 0.1]
+    injected: -0.09664565
+  - name: "long"
+    bounds: [-2., -1.]
+    injected: -1.6259238
+  - name: "psi"
+    bounds: [-1., -0.5]
+    injected: -0.83   # sin(psi), paper 2 (arXiv:2511.03604)
+  - name: "s1"
+    bounds: [0.0001, 0.1]
+    injected: 0.04156049812924856
+  - name: "s2"
+    bounds: [0.1, 0.3]
+    injected: 0.13842963137295858
+  instr_noise:
+  - name: "A"
+    bounds: [1, 5]
+    injected: 2.4
+  - name: "P"
+    bounds: [3, 10]
+    injected: 7.9

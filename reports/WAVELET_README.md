@@ -1,299 +1,620 @@
 # Wavelet-domain analysis of the galactic foreground
 
-This document describes the wavelet-domain (WDM) analysis added to BAHAMAS as an
-**optional** alternative to the chunked short-time Fourier transform (STFT) analysis of
-[Pozzoli et al. 2025 (arXiv:2506.22542)](https://arxiv.org/abs/2506.22542). Nothing in the
-existing chunked pipeline was replaced. The wavelet pipeline runs only when a config sets
-`domain: 'wavelet'`.
+This document describes the wavelet-domain analysis added to BAHAMAS as an **optional** alternative to the chunked
+short-time Fourier transform (STFT) analysis of
+[Pozzoli et al. 2025 (arXiv:2506.22542)](https://arxiv.org/abs/2506.22542) and
+[Buscicchio et al. 2025 (arXiv:2511.03604)](https://arxiv.org/abs/2511.03604). Nothing in the chunked pipeline was
+replaced; the wavelet pipeline runs only when a config sets `domain: 'wavelet'`.
 
-The goal is to compare two ways of describing the yearly amplitude modulation of the
-galactic white-dwarf foreground:
+The document gives the mathematics end to end, in one notation:
 
-1. the **parametric sky-envelope model** used by the chunked analysis
-   (`lat`, `long`, `s1`, `s2`, `psi`), and
-2. a **data-driven model**: the log of the modulation is a sum of an unknown number of
-   wavelet atoms, sampled with reversible-jump MCMC (RJMCMC). The posterior on the
-   number of atoms gives the Bayes factor versus the number of wavelets.
+1. the data model (Section 2);
+2. the WDM transform that takes the time series to the time-frequency plane (Section 3);
+3. the modulation model, i.e. the "wavelets" that describe $P_c(t)$ (Section 4);
+4. the likelihood (Section 5), and the proof that it is the same Gamma likelihood as Eq. 9 of arXiv:2511.03604,
+   written in a different domain (Section 6);
+5. how the fit is done: priors, reversible-jump MCMC and Bayes factors (Section 7).
 
-Both are evaluated in the same wavelet-domain likelihood, so the comparison isolates the
-modulation model. A third option (no modulation) is included as the null model.
+The code, validation, configuration and limitations follow (Sections 8–13).
 
-Like the rest of BAHAMAS, everything evaluated repeatedly (the transform, the simulation
-and the likelihood) is written in JAX.
+> **Two different "wavelets".** The word is used for two unrelated things, kept apart throughout:
+>
+> * the **WDM basis functions** $g_{nm}(t)$ (Section 3). They transform the *data*. They are fixed by the grid and
+>   have no free parameters.
+> * the **modulation atoms** $\psi\big((t-t_k)/\tau_k\big)$ (Section 4). They model the *envelope* $P_c(t)$. Their
+>   number, positions, widths and amplitudes are what the RJMCMC samples. The code and configs call them
+>   "wavelets" (`modulation: 'wavelets'`, `max_wavelets`); this document calls them **atoms**. The default atom is a
+>   Gaussian, which strictly is not a wavelet (its mean is not zero); the optional `ricker` atom is one.
 
 ---
 
-## 1. Overview
+## 1. Notation
 
-| Step | What happens | Code |
+**Indices.**
+
+| index | runs over | meaning |
 |---|---|---|
-| Simulate | One continuous time series per TDI channel: stationary noise plus a galaxy multiplied by $\sqrt{P_c(t)}$ | [simulate.py](../bahamas/wavelet/simulate.py) |
-| Transform | Wilson-Daubechies-Meyer (WDM) transform to an $N_t \times N_f$ time-frequency grid | [wdm.py](../bahamas/wavelet/wdm.py) |
-| Likelihood | Independent Gaussian (or binned Gamma) coefficients with variance from the model | [model.py](../bahamas/wavelet/model.py) |
-| Sampling | Eryn with reversible jump over the number of atoms, or NUTS for the fixed-dimension models | [sampler.py](../bahamas/wavelet/sampler.py) |
-| Pipeline | Config-driven data generation and inference, results and plots | [pipeline.py](../bahamas/wavelet/pipeline.py), [plotting.py](../bahamas/wavelet/plotting.py) |
-| CLI hooks | `bahamas_data` / `bahamas_inference` dispatch on `domain: 'wavelet'` | [run_data.py:28-33](../bahamas/utilities/run_data.py#L28-L33), [run_pe.py:35-46](../bahamas/utilities/run_pe.py#L35-L46) |
+| $c$ | $\lbrace A, E\rbrace$ | TDI channel |
+| $l$ | $0, \dots, N-1$ | time sample, $t_l = t_0 + l\,\Delta t$ |
+| $n$ | $0, \dots, N_t-1$ | WDM time pixel, centred at $t_n = t_0 + n\,\Delta T$ |
+| $m$ | $0, \dots, N_f-1$ | WDM frequency pixel, centred at $f_m = m\,\Delta F$ |
+| $g$ | $1, \dots, N_g$ | frequency group: a set $\mathcal M_g$ of adjacent pixels $m$ (log-spaced) |
+| $s$ | $1, \dots, N_s$ | time block: a set $\mathcal N_s$ of $n_\tau$ consecutive time pixels $n$ |
+| $k$ | $1, \dots, K_c$ | modulation atom in channel $c$ |
 
-The whole subpackage is [bahamas/wavelet/](../bahamas/wavelet/).
+**Symbols.**
+
+| symbol | meaning | type |
+|---|---|---|
+| $x_c(t_l)$ | the time series of channel $c$ | data |
+| $w_{c,nm}$ | WDM coefficient of $x_c$ in pixel $(n, m)$ | data |
+| $Y_{c,sg}$ | $\sum w^2$ over the pixels of block $s$ and group $g$ | data (sufficient statistic) |
+| $\nu_g$ | number of pixels in a group, $n_\tau\,\lvert\mathcal M_g\rvert$ | fixed by the grid |
+| $S_{n,c}(f)$ | one-sided PSD of the instrument noise (parameters `A`, `P`) | model, noise |
+| $S_{\rm gal}(f)$ | one-sided PSD of the unmodulated galaxy (`alpha`, `amp`, `fknee`, `fr1`, `fr2`), $\propto A_{\rm gal} = 10^{\rm amp}$ | model, signal |
+| $P_c(t)$ | power modulation of the galaxy in channel $c$, dimensionless | model, signal |
+| $\sigma^2_{c,nm}$, $\sigma^2_{c,sg}$ | model variance of a coefficient | model (noise + signal) |
+| $b_c$ | constant level of $\ln P_c$ ($b_A \equiv 0$, $b_E$ = `level_E`) | model parameter |
+| $t_k, \tau_k, a_k$ | centre, width, amplitude of atom $k$ | model parameters |
+| $\langle S\rangle_m$ | PSD averaged over the spectral window of pixel $m$ (Section 3.4) | derived |
+
+Run-1/run-2 values of the grid: $\Delta t = 10$ s, $N_f = 3600$, $\Delta T = 10$ h, $\Delta F = 13.9\ \mu$Hz,
+$N_t = 72$ (30 days), $n_\tau = 2$, two edge pixels dropped at each end, so $N_s = 34$ blocks, and $N_g = 174$ groups
+in $[0.1, 29]$ mHz.
 
 ---
 
-## 2. Physical model
+## 2. Data model
 
-For TDI channel $c$ (A or E) the data are modelled as a locally stationary process with
-evolutionary power spectral density
-
-$$
-S_c(f, t) = S_{n,c}(f) + P_c(t)\, S_{\rm gal}(f),
-$$
-
-where
-
-- $S_{n,c}(f)$ is the instrument noise, taken unchanged from the existing
-  `psd_noise.noise` (parameters `A`, `P`);
-- $S_{\rm gal}(f)$ is the unmodulated galactic spectrum, taken unchanged from the
-  existing `psd_galaxy.galactic_foreground` (parameters `alpha`, `amp`, `fknee`, `fr1`, `fr2`);
-- $P_c(t)$ is the **instantaneous power modulation** of channel $c$.
-
-**Link to the chunked model.** The chunked analysis uses the chunk-averaged envelope
-`average_envelopes_gaussian(t1, t2)`. The instantaneous power modulation is the square of
-the amplitude envelope returned by `psd_response.modulation.envelopes_gaussian`:
-
-$$
-P_c(t) = \big[\text{envelopes\_gaussian}(t)_c\big]^2,
-\qquad
-\frac{1}{t_2 - t_1}\int_{t_1}^{t_2} P_c(t)\,dt = \text{average\_envelopes\_gaussian}(t_1, t_2).
-$$
-
-The second identity was checked numerically to a relative precision of $10^{-7}$ for several
-chunks and both channels
-([test_power_modulation_averages_to_chunk_envelope](../tests/test_wavelet_model.py#L52)). The
-wavelet model with the parametric envelope therefore describes **the same physics** as the
-chunked model, just without chunk averaging. Code:
-[simulate.power_modulation](../bahamas/wavelet/simulate.py#L68).
-
-### Simulated data
-
-The chunked pipeline draws each chunk independently in the frequency domain. A wavelet
-analysis needs one continuous series, so
-[simulate_channels](../bahamas/wavelet/simulate.py#L144) draws
+For channel $c$ the data are a locally stationary Gaussian process: stationary noise plus a stationary galaxy whose
+amplitude is modulated in time,
 
 $$
 x_c(t) = n_c(t) + \sqrt{P_c(t)}\; g_c(t),
 $$
 
-with $n_c$ and $g_c$ independent stationary Gaussian processes with PSDs $S_{n,c}$ and
-$S_{\rm gal}$ ([stationary_gaussian](../bahamas/wavelet/simulate.py#L41)). The modulation is
-evaluated on an hourly grid and interpolated (error $\lesssim 10^{-6}$), because the
-envelope formula is expensive at the 10 s sampling rate. Random numbers use `jax.random`
-keys, so simulations are reproducible from a seed.
+with $n_c$ and $g_c$ independent stationary Gaussian processes with one-sided PSDs $S_{n,c}(f)$ and $S_{\rm gal}(f)$.
+Its time-dependent (evolutionary) PSD is
 
-Supported sources are `instr_noise`, `galactic_DWD_time` (modulated) and `galactic_DWD`
-(stationary). The template `template/pe_galaxy_cyclo.yaml` works as is.
+$$
+S_c(f, t) = S_{n,c}(f) + P_c(t)\, S_{\rm gal}(f).
+$$
+
+$S_{n,c}$ and $S_{\rm gal}$ are the existing BAHAMAS functions `psd_noise.noise` and
+`psd_galaxy.galactic_foreground`, unchanged.
+
+**Link to the chunked model.** For the sky-envelope model, $P_c(t) = M_c^2(t)$, the square of the amplitude envelope
+`psd_response.modulation.envelopes_gaussian`. The chunked analysis uses its average over a chunk
+$[t_S, t_E]$,
+
+$$
+\overline M_c = \frac{1}{t_E - t_S}\int_{t_S}^{t_E} M_c^2(t)\,dt = \texttt{average\_envelopes\_gaussian}(t_S, t_E),
+$$
+
+which is checked numerically to $10^{-7}$
+([test_power_modulation_averages_to_chunk_envelope](../tests/test_wavelet_model.py#L52)). The two pipelines therefore
+describe the same physics; the wavelet one does not average over chunks.
+
+**Simulation.** [simulate_channels](../bahamas/wavelet/simulate.py#L144) draws $n_c$ and $g_c$ in the frequency
+domain ([stationary_gaussian](../bahamas/wavelet/simulate.py#L41)), multiplies $g_c$ by $\sqrt{P_c(t)}$ (evaluated
+hourly and interpolated, error $\lesssim 10^{-6}$) and adds the two. The draws are circular, so the injection runs
+simulate a longer series and cut it, to avoid ends that wrap around. Random numbers use `jax.random` keys.
 
 ---
 
 ## 3. The WDM transform
 
-**Code:** [wdm.py](../bahamas/wavelet/wdm.py).
+**Code:** [wdm.py](../bahamas/wavelet/wdm.py). References: Necula et al. 2012; Cornish 2020
+([arXiv:2009.00043](https://arxiv.org/abs/2009.00043)); Digman & Cornish 2022
+([arXiv:2212.04600](https://arxiv.org/abs/2212.04600)).
 
-The WDM basis (Necula et al. 2012; Cornish 2020,
-[arXiv:2009.00043](https://arxiv.org/abs/2009.00043)) tiles the time-frequency plane with
-$N_t$ time bins of width $\Delta T = N_f\,\Delta t$ and $N_f$ frequency bins of width
-$\Delta F = 1/(2 N_f \Delta t)$. It is the representation used for the LISA galactic
-foreground by Digman & Cornish 2022 ([arXiv:2212.04600](https://arxiv.org/abs/2212.04600)).
+### 3.1 Grid
 
-- The Meyer window $\tilde\phi(\omega)$ (Cornish 2020, Eq. 11) is
-  [phitilde](../bahamas/wavelet/wdm.py#L42). It depends only on the grid, so it is computed
-  once ([_phif](../bahamas/wavelet/wdm.py#L73)) and enters the compiled transform as a constant.
-- The forward transform from the frequency domain (Cornish 2020, Eq. 13) is
-  [_forward_freq](../bahamas/wavelet/wdm.py#L102), jit-compiled with the grid shape as static
-  arguments. The inverse is [_inverse_freq](../bahamas/wavelet/wdm.py#L128). Public wrappers:
-  [forward_time](../bahamas/wavelet/wdm.py#L194), [inverse_time](../bahamas/wavelet/wdm.py#L212),
-  [forward_freq](../bahamas/wavelet/wdm.py#L158), [inverse_freq](../bahamas/wavelet/wdm.py#L178).
-- The normalisation makes the transform **orthonormal**: $\sum w^2 = \sum x^2$. Then white
-  noise of variance $\sigma^2$ gives coefficients of variance $\sigma^2$, and a stationary
-  one-sided PSD $S(f)$ gives coefficient variance $S(f_m)/(2\Delta t)$.
-- Both $N_f$ and $N_t$ must be even (the DC and Nyquist bins share row $m = 0$).
-
-The transform was implemented here rather than taken from a package, and validated against
-[`pywavelet`](https://pypi.org/project/pywavelet/), the WDM implementation used in the LISA
-community (Section 7).
-
-### Band-averaging the PSD
-
-When the PSD changes appreciably across one pixel (steep spectra, low frequencies), the
-variance of pixel $m$ is not $S(f_m)$ but the PSD averaged over the squared spectral window
-of the pixel:
+A series of $N = N_t N_f$ samples at cadence $\Delta t$ is mapped to $N_t \times N_f$ coefficients on a uniform
+time-frequency grid:
 
 $$
-\sigma^2_m = \frac{1}{2\Delta t}\sum_j W_j\, S(f_m + \delta_j \Delta F),
-\qquad W_j \propto |\tilde\phi(\delta_j \Delta F)|^2,\quad \sum_j W_j = 1 .
+\Delta T = N_f\,\Delta t, \qquad \Delta F = \frac{1}{2\,\Delta T} = \frac{1}{2 N_f\,\Delta t}, \qquad
+\Delta T\,\Delta F = \tfrac12 .
 $$
 
-Code: [band_weights](../bahamas/wavelet/wdm.py#L227). The test
-[test_band_average_matches_coloured_noise](../tests/test_wdm.py#L85) shows this is needed: for
-an $f^{-4}$ spectrum the band-averaged prediction fits simulated data with
-$\chi^2 \approx N_{\rm dof}$, while evaluating the PSD at the pixel centre is rejected.
+Pixel $(n, m)$ is centred at $t_n = t_0 + n\Delta T$, $f_m = m\Delta F$
+([wdm_grid](../bahamas/wavelet/wdm.py#L84)). $N_f$ and $N_t$ must be even. Each pixel covers half a unit of
+time-frequency area, so each pixel holds **one real number**: $N$ samples in, $N$ coefficients out.
+
+### 3.2 Basis functions
+
+The WDM basis is a Wilson basis built on one window $\phi(t)$:
+
+$$
+g_{nm}(t) = \sqrt2\,\phi(t - n\Delta T)\times
+\begin{cases}
+\cos(2\pi f_m t), & n + m \text{ even},\\
+\sin(2\pi f_m t), & n + m \text{ odd},
+\end{cases}
+\qquad m = 1, \dots, N_f - 1,
+$$
+
+(up to the sign convention of the odd terms, which we take from `pywavelet`). Row $m = 0$ holds the DC component on
+even $n$ and the Nyquist component on odd $n$. The window is defined by its Fourier transform, the Meyer window of
+Cornish 2020 Eq. 11, in angular frequency $\omega = 2\pi f$:
+
+$$
+\tilde\Phi(\omega) = \frac{1}{\sqrt{\Delta\Omega}}\times
+\begin{cases}
+1, & \lvert\omega\rvert < A,\\[2pt]
+\cos\Big[\dfrac{\pi}{2}\,\nu_d\Big(\dfrac{\lvert\omega\rvert - A}{B}\Big)\Big], & A \le \lvert\omega\rvert < A + B,\\[2pt]
+0, & \text{otherwise,}
+\end{cases}
+\qquad \Delta\Omega = 2\pi\Delta F,\quad A = \frac{\Delta\Omega}{4},\quad B = \frac{\Delta\Omega}{2},
+$$
+
+where $\nu_d(x) = I_x(d, d)$ is the regularised incomplete beta function and $d$ sets the steepness of the roll-off
+(config `nx`, default 4). Code: [phitilde](../bahamas/wavelet/wdm.py#L42). The window is flat over $\Delta F/2$ and
+vanishes beyond $\lvert f - f_m\rvert = \tfrac34\Delta F$, so each $g_{nm}$ is localised within about one pixel in
+frequency and a few $\Delta T$ in time.
+
+### 3.3 Coefficients
+
+The coefficients are the projections of the data on the basis,
+
+$$
+w_{c,nm} = \sum_{l=0}^{N-1} x_c(t_l)\, g_{nm}(t_l).
+$$
+
+They are computed in the frequency domain (Cornish 2020 Eq. 13). For each row $m$, the FFT of $x_c$ is multiplied by
+$\tilde\Phi$ centred on $f_m$, an $N_t$-point inverse FFT gives one value per time pixel, and the real or imaginary part
+is kept according to the parity of $n + m$. Cost: $N_f$ FFTs of length $N_t$. Code:
+[_forward_freq](../bahamas/wavelet/wdm.py#L102), wrappers [forward_time](../bahamas/wavelet/wdm.py#L194) and
+[forward_freq](../bahamas/wavelet/wdm.py#L158); inverse [inverse_time](../bahamas/wavelet/wdm.py#L212).
+
+The normalisation makes the basis **orthonormal** on the sampled series,
+$\sum_l g_{nm}(t_l)\,g_{n'm'}(t_l) = \delta_{nn'}\delta_{mm'}$, so $\sum_{nm} w^2_{c,nm} = \sum_l x_c^2(t_l)$ and the
+transform is exactly invertible ([test_orthonormal_and_invertible](../tests/test_wdm.py#L11)). It agrees with
+`pywavelet` coefficient by coefficient up to a factor $\sqrt2$ in their normalisation
+([test_matches_pywavelet](../tests/test_wdm.py#L35)).
+
+### 3.4 Variance of a coefficient
+
+The likelihood needs the distribution of $w_{c,nm}$.
+
+*Stationary white noise.* Samples of variance $\sigma_x^2$ have one-sided PSD $S = 2\Delta t\,\sigma_x^2$. An
+orthonormal transform maps independent $\mathcal N(0, \sigma_x^2)$ samples to independent $\mathcal N(0,\sigma_x^2)$
+coefficients, so
+
+$$
+\mathrm{Var}(w_{nm}) = \sigma_x^2 = \frac{S}{2\Delta t}.
+$$
+
+*Stationary coloured noise.* $w_{nm}$ sees the PSD through the squared spectral window of pixel $m$:
+
+$$
+\mathrm{Var}(w_{nm}) = \frac{\langle S\rangle_m}{2\Delta t},\qquad
+\langle S\rangle_m = \sum_j W_j\, S(f_m + \delta_j\Delta F),\qquad
+W_j \propto \big\lvert\tilde\Phi(2\pi\delta_j\Delta F)\big\rvert^2,\quad \sum_j W_j = 1,
+$$
+
+with $\delta_j$ a grid of offsets in $\lvert\delta\rvert < \tfrac34$ (`band_samples` points per side,
+[band_weights](../bahamas/wavelet/wdm.py#L227)). This matters for steep spectra: for an $f^{-4}$ spectrum the
+band-averaged prediction passes a $\chi^2$ test and the pixel-centre value $S(f_m)$ fails
+([test_band_average_matches_coloured_noise](../tests/test_wdm.py#L85)).
+
+*Locally stationary (our data).* If $S_c(f, t)$ changes slowly over the support of $g_{nm}$, replace $S$ by
+$S_c(f, t_n)$:
+
+$$
+\boxed{\;w_{c,nm} \sim \mathcal N\big(0,\ \sigma^2_{c,nm}\big),\qquad
+\sigma^2_{c,nm} = \frac{P_c(t_n)\,\langle S_{\rm gal}\rangle_m + \langle S_{n,c}\rangle_m}{2\Delta t}\;}
+$$
+
+and treat different pixels as independent (the diagonal approximation of Cornish 2020). Here $P_c$ varies over days and
+a pixel is 10 h long. The approximation is checked on simulated data: at the injected parameters
+$w^2/\sigma^2$ has mean 1 and variance 2, as $\chi^2_1$ requires
+([test_whitened_coefficients](../tests/test_wavelet_model.py#L113)).
+
+**Edges.** The FFT-based transform is periodic, so the first and last time pixels mix the end of the series with its
+start. `edge_bins` pixels are dropped at each end (2 in the injection runs, after a check of the pixel variances in
+`data/wavelet_injection/data_checks.py`).
 
 ---
 
-## 4. Wavelet-domain likelihood
+## 4. The modulation model (the atoms)
 
-**Code:** [WaveletLikelihood](../bahamas/wavelet/model.py#L147).
+**Code:** [WaveletModulation](../bahamas/wavelet/model.py#L268).
 
-For locally stationary noise the WDM coefficients are, to a good approximation,
-independent Gaussians (the standard diagonal approximation, Cornish 2020):
+### 4.1 Definition
 
-$$
-w_{c,nm} \sim \mathcal N\!\left(0,\ \sigma^2_{c,nm}\right),\qquad
-\sigma^2_{c,nm} = \frac{P_c(t_n)\,\langle S_{\rm gal}\rangle_m + \langle S_{n,c}\rangle_m}{2\Delta t}.
-$$
-
-**Coarse graining (optional).** Adjacent frequency pixels can be grouped in log-spaced bins
-([frequency_groups](../bahamas/wavelet/model.py#L120), config `freq_bins`), and consecutive
-time pixels in blocks (`time_bin`). Within a group $g$ of $\nu_g$ pixels with a common
-variance, $Y_g = \sum w^2$ is a sufficient statistic and $Y_g/\sigma_g^2 \sim \chi^2_{\nu_g}$,
-which gives a Gamma likelihood:
+The log of the power modulation of channel $c$ is a constant plus a sum of $K_c$ atoms:
 
 $$
-\ln \mathcal L = \sum_{c,n,g}\Big[\big(\tfrac{\nu_g}{2}-1\big)\ln Y - \tfrac{\nu_g}{2}\ln(2\sigma^2) - \ln\Gamma\big(\tfrac{\nu_g}{2}\big) - \frac{Y}{2\sigma^2}\Big].
+\ln P_c(t) = b_c + \sum_{k=1}^{K_c} a_{c,k}\;\psi\Big(\frac{t - t_{c,k}}{\tau_{c,k}}\Big),
+\qquad
+\psi(x) = e^{-x^2/2}\ \ (\texttt{gaussian, default}),\qquad
+\psi(x) = (1 - x^2)\,e^{-x^2/2}\ \ (\texttt{ricker}).
 $$
 
-This is the wavelet analogue of the coarse-grained Gamma likelihood of the chunked pipeline.
-With one pixel per group it equals the exact Gaussian likelihood up to a data-only constant
-([test_binned_likelihood_matches_pixel_likelihood_differences](../tests/test_wavelet_model.py#L124)).
-Time binning is justified because the modulation varies over months while one time pixel is
-hours long ([test_time_binning](../tests/test_wavelet_model.py#L143)). Code:
-[log_likelihood](../bahamas/wavelet/model.py#L227) and
-[band_average](../bahamas/wavelet/model.py#L210) (pure JAX).
+Each atom has three parameters, sampled as
 
-**Edges.** The FFT-based transform is periodic, so the first and last time pixels mix the
-end of the series with its start. `edge_bins` pixels are dropped at each end (default 4).
+| parameter | meaning | prior (injection runs) |
+|---|---|---|
+| $u_k = (t_k - t_0)/T$ | centre as a fraction of the span $T = N\Delta t$ | uniform on $[0, 1]$ |
+| $\lambda_k = \log_{10}(\tau_k / 1\,\mathrm{d})$ | width | uniform on $[\log_{10}5, \log_{10}60]$ (`width_range_days`) |
+| $a_k$ | amplitude, in units of $\ln P$ | uniform on $[-3, 3]$ (`amp_range`) |
 
----
+and the number of atoms $K_c$ has a uniform prior on $\lbrace 0, \dots, 8\rbrace$ (`min_wavelets`, `max_wavelets`), per
+channel and independently. The atoms of a channel are exchangeable: the model does not depend on their order.
 
-## 5. Modulation models
+Writing the model in $\ln P$ keeps $P_c(t) > 0$ for any parameters, and makes an atom of amplitude $a$ a
+multiplicative change $e^{a}$ of the galactic power at its centre. The time-domain shape of the atoms of the run-1
+injection is shown under the injection in `data/wavelet_injection/outputs/run1/injection.png`.
 
-Selected with `inference.modulation`. Code: [model.py:247-326](../bahamas/wavelet/model.py#L247-L326)
-and [WaveletPosterior.power_modulation](../bahamas/wavelet/sampler.py#L206).
+### 4.2 The levels, and why only $10^{\rm amp}P_c(t)$ is measured
 
-| `modulation` | $P_c(t)$ | Parameters |
+The galaxy enters the data only through the product $S_{\rm gal}(f)\,P_c(t) \propto A_{\rm gal}\,P_c(t)$, with
+$A_{\rm gal} = 10^{\rm amp}$. Writing it out,
+
+$$
+A_{\rm gal}\,P_c(t) = 10^{\,{\rm amp}}\; e^{\,b_c}\; \exp\Big[\sum_k a_{c,k}\,\psi(\cdot)\Big]
+= 10^{\,{\rm amp} + b_c/\ln 10}\; \exp\Big[\sum_k a_{c,k}\,\psi(\cdot)\Big].
+$$
+
+* `amp` and $b_A$ appear only in the combination ${\rm amp} + b_A/\ln 10$, so $b_A$ is fixed to 0 and absorbed into
+  `amp`. $b_E$ is then free and measures the E level relative to A (`level_E` $= b_E - b_A$). For an injection made
+  with $b_A \ne 0$ the "effective" amplitude that the model can recover is
+  ${\rm amp}_{\rm eff} = {\rm amp} + b_A/\ln 10$ (run 1: $-43.943 \to -43.171$).
+* Even with $b_A = 0$ the split is not unique: an atom much wider than the 30 days is almost constant over the data,
+  so it shifts $\ln P_c$ by a constant that `amp` can undo. $P_c(t)$ alone is not identified; the product is.
+
+Plots of the recovered modulation therefore show the galactic power relative to the injected amplitude,
+
+$$
+10^{\,\Delta\log_{10}A}\,P_c(t),\qquad \Delta\log_{10}A = {\rm amp} - {\rm amp}_{\rm inj},
+$$
+
+computed per posterior sample ([galactic_power](../bahamas/wavelet/sampler.py#L225)). This is the "$\Delta\log_{10}A$"
+on the y-axis of `modulation_recovery.png`. At the injection it equals the injected $P_c(t)$.
+
+### 4.3 The three modulation models
+
+Selected with `inference.modulation`:
+
+| `modulation` | $P_c(t)$ | parameters |
 |---|---|---|
 | `none` | $1$ (stationary galaxy, null model) | spectral only |
-| `parametric` | sky envelope of the chunked analysis, [parametric_modulation](../bahamas/wavelet/model.py#L252) | `lat`, `long`, `s1`, `s2`, `psi` (those with `bounds` in the sources file) |
-| `wavelets` | $\ln P_c(t) = b_c + \sum_{k=1}^{K_c} a_k\, \psi\!\big((t - t_k)/\tau_k\big)$, [WaveletModulation](../bahamas/wavelet/model.py#L268) | $K_c$ atoms per channel, each $(t_k, \log_{10}\tau_k, a_k)$ |
-
-Details of the wavelet model:
-
-- Each atom has a centre $t_k = t_0 + t_{\rm frac}\,T$ with $t_{\rm frac} \in [0, 1]$, a
-  width $\tau_k$ with a log-uniform prior (`width_range_days`, default 5–180 days) and an
-  amplitude $a_k$ in $\ln P$ (`amp_range`, default $[-3, 3]$).
-- The atom shape $\psi$ is `gaussian` (default) or `ricker` (Mexican-hat wavelet, zero mean).
-- Working in $\ln P$ keeps $P_c(t) > 0$.
-- The constant level $b_c$ is fixed to 0 in the first channel, because it is degenerate with
-  the galactic amplitude `amp`, and free in the others (`level_range`).
-- **Only the product $10^{\rm amp}P_c(t)$ is identifiable** in the wavelet model, since atoms
-  can trade off against `amp`. Plots and comparisons therefore use
-  $10^{\,\rm amp - amp_{inj}}\,P_c(t)$
-  ([galactic_power](../bahamas/wavelet/sampler.py#L225)).
-- The atoms are passed to JAX padded to `max_wavelets` with a boolean mask, so array shapes
-  are fixed under `jit`/`vmap`. Inactive slots are replaced by a zero-amplitude atom before
-  any arithmetic ([model.py:318](../bahamas/wavelet/model.py#L318)), because eryn stores NaN in
-  inactive slots.
+| `parametric` | sky envelope $M_c^2(t)$ of the chunked analysis, [parametric_modulation](../bahamas/wavelet/model.py#L252) | `lat`, `long`, `s1`, `s2`, `psi` (those with `bounds`) |
+| `wavelets` | the atom model of Section 4.1 | $K_c$ and $(u_k, \lambda_k, a_k)$ per channel, `level_E` |
 
 ---
 
-## 6. Sampling
+## 5. The wavelet-domain likelihood
+
+**Code:** [WaveletLikelihood](../bahamas/wavelet/model.py#L147), [log_likelihood](../bahamas/wavelet/model.py#L227).
+
+### 5.1 Per pixel
+
+From the boxed result of Section 3.4, the coefficients of the analysed pixels are independent Gaussians:
+
+$$
+\ln\mathcal L = -\frac12 \sum_{c\in\lbrace A,E\rbrace}\ \sum_{n}\ \sum_{m}
+\left[\frac{w^2_{c,nm}}{\sigma^2_{c,nm}} + \ln\big(2\pi\,\sigma^2_{c,nm}\big)\right],
+$$
+
+the sums running over the analysed time pixels $n$ (edges dropped) and frequency pixels $m$ in $[f_1, f_2]$ (pixel
+$m = 0$ excluded).
+
+### 5.2 Coarse-grained: the Gamma likelihood
+
+To reduce the number of terms, pixels are grouped:
+
+* in frequency, the pixels in $[f_1, f_2]$ are split into $N_g$ contiguous log-spaced groups $\mathcal M_g$
+  (config `freq_bins`, [frequency_groups](../bahamas/wavelet/model.py#L120));
+* in time, the analysed pixels are split into $N_s$ blocks $\mathcal N_s$ of $n_\tau$ consecutive pixels
+  (config `time_bin`).
+
+A group $(s, g)$ holds $\nu_g = n_\tau\,\lvert\mathcal M_g\rvert$ pixels. Within it the model variance is taken as
+constant,
+
+$$
+\sigma^2_{c,sg} = \frac{P_c(\bar t_s)\,\bar S_{{\rm gal},g} + \bar S_{n,c,g}}{2\Delta t},
+\qquad \bar t_s = \frac{1}{n_\tau}\sum_{n\in\mathcal N_s} t_n,
+\qquad \bar S_g = \frac{1}{\lvert\mathcal M_g\rvert}\sum_{m\in\mathcal M_g}\langle S\rangle_m
+$$
+
+([band_average](../bahamas/wavelet/model.py#L210)). This is justified when $P_c$ changes little over $n_\tau\Delta T$
+(20 h here) and the PSD little across a group. The data enter only through the sum of squares
+
+$$
+Y_{c,sg} = \sum_{n\in\mathcal N_s}\ \sum_{m\in\mathcal M_g} w^2_{c,nm},
+$$
+
+which is a sufficient statistic: $Y_{c,sg}/\sigma^2_{c,sg}$ is a sum of $\nu_g$ squared independent standard normals,
+so $Y_{c,sg}/\sigma^2_{c,sg} \sim \chi^2_{\nu_g}$, i.e. $Y_{c,sg} \sim \mathrm{Gamma}\big(\text{shape } \nu_g/2,\
+\text{scale } 2\sigma^2_{c,sg}\big)$. The likelihood is the product of these densities:
+
+$$
+\boxed{\;
+\ln\mathcal L(\boldsymbol Y\mid\theta) = \sum_{c\in\lbrace A,E\rbrace}\ \sum_{s=1}^{N_s}\ \sum_{g=1}^{N_g}
+\left[\Big(\frac{\nu_g}{2} - 1\Big)\ln Y_{c,sg} - \frac{\nu_g}{2}\ln\big(2\sigma^2_{c,sg}\big)
+- \ln\Gamma\Big(\frac{\nu_g}{2}\Big) - \frac{Y_{c,sg}}{2\sigma^2_{c,sg}}\right]\;}
+$$
+
+with $\theta$ all the model parameters: the spectral ones in $\sigma^2$ through $S_{\rm gal}$ and $S_{n,c}$, and the
+modulation ones through $P_c$. This is exactly what the code evaluates: the data-only terms
+$(\nu/2 - 1)\ln Y - (\nu/2)\ln 2 - \ln\Gamma(\nu/2)$ are precomputed once (`_const`), and per call it adds
+$-\sum[(\nu_g/2)\ln\sigma^2 + Y/(2\sigma^2)]$.
+
+With one pixel per group ($\nu_g = 1$, $Y = w^2$) the bracket is the Gaussian term of Section 5.1 minus
+$\tfrac12\ln w^2$, a data-only constant (the Jacobian from $w$ to $w^2$). The two likelihoods then give identical
+posteriors ([test_binned_likelihood_matches_pixel_likelihood_differences](../tests/test_wavelet_model.py#L124)).
+
+---
+
+## 6. Consistency with the Gamma likelihood of arXiv:2511.03604 (Eq. 9)
+
+### 6.1 Their likelihood
+
+Buscicchio, Pozzoli, Chirico & Sesana (2025) split the data into chunks, Fourier transform each chunk and average the
+periodogram over log-spaced frequency bins. In their notation (we write their chunk index as $i$, because $c$ is our
+channel index): $j \in \lbrace A, E\rbrace$ is the channel, $k$ a Fourier frequency, $m$ a coarse bin with $n_{b_m}$
+Fourier frequencies. The Fourier amplitudes are normalised to the one-sided PSD (their Eq. 2, with $W = N$),
+
+$$
+\tilde d^{\,i}_{jk} = \sqrt{\frac{2}{N f_s}}\ \sum_{l} d^{\,i}_{jl}\,e^{-2\pi\imath kl/N},
+\qquad \mathbb E\,\lvert\tilde d^{\,i}_{jk}\rvert^2 = S^{\,i}_{jk},
+$$
+
+the averaged periodogram is (their Eq. 4)
+
+$$
+\hat P^{\,i}_{jm} = \frac{1}{n_{b_m}}\sum_{k\in\mathcal F_m}\lvert\tilde d^{\,i}_{jk}\rvert^2,
+$$
+
+and the single-chunk likelihood is their **Eq. 9**:
+
+$$
+\ln\mathcal L_G^{\rm chunk}\big(\hat{\boldsymbol P}^{\,i}\mid\theta\big) =
+-\sum_{j\in\lbrace A,E\rbrace}\ \sum_{m=1}^{n_g}\left[\ln\Gamma\Big(\frac{n_{b_m}}{2}\Big)
++ \frac{n_{b_m}}{2}\ln S^{\,i}_{jm}(\theta) - \Big(\frac{n_{b_m}}{2} - 1\Big)\ln\hat P^{\,i}_{jm}
++ \frac{n_{b_m}}{2}\,\frac{\hat P^{\,i}_{jm}}{S^{\,i}_{jm}(\theta)}\right],
+$$
+
+summed over chunks $i$ (their Eq. 1), with the model PSD (their Eq. 10, without the extragalactic term)
+
+$$
+S^{\,i}_{jm}(\theta) = \overline M^{\,i}_j\, S^{\rm GF}_m + S^{(n)}_{jm}.
+$$
+
+In words: $\hat P$ is the **data** (an averaged periodogram), $S$ is the **model** PSD (noise
+$S^{(n)}$ plus the modulated galaxy $\overline M\,S^{\rm GF}$), and $n_{b_m}$ is the number of averaged
+values. Eq. 9 is the log-density of $\hat P$ for $\hat P = (S/n_{b_m})\,\chi^2_{n_{b_m}}$: mean $S$, shape
+$n_{b_m}/2$, rate $n_{b_m}/(2S)$ (the constant $\tfrac{n_{b_m}}{2}\ln\tfrac{n_{b_m}}{2}$, which does not depend on
+$\theta$, is left out).
+
+### 6.2 Our likelihood written in their variables
+
+Define, for each of our groups, a **wavelet periodogram** and a **wavelet model PSD**, both in units of a one-sided
+PSD:
+
+$$
+\hat P^{\rm wdm}_{c,sg} \equiv \frac{2\Delta t}{\nu_g}\,Y_{c,sg}
+= \frac{1}{\nu_g}\sum_{n\in\mathcal N_s}\ \sum_{m\in\mathcal M_g} 2\Delta t\,w^2_{c,nm},
+\qquad
+S^{\rm wdm}_{c,sg} \equiv 2\Delta t\,\sigma^2_{c,sg} = P_c(\bar t_s)\,\bar S_{{\rm gal},g} + \bar S_{n,c,g}.
+$$
+
+By Section 3.4, each $2\Delta t\,w^2_{c,nm}$ has expectation $\langle S_c\rangle_m$, just as each
+$\lvert\tilde d_{jk}\rvert^2$ has expectation $S_{jk}$. So $\hat P^{\rm wdm}$ is an average of PSD estimates, like
+$\hat P$, and $\mathbb E\,\hat P^{\rm wdm} = S^{\rm wdm}$.
+
+Substitute $Y = \nu\hat P^{\rm wdm}/(2\Delta t)$ and $2\sigma^2 = S^{\rm wdm}/\Delta t$ in the bracket of the boxed
+likelihood of Section 5.2 (indices $c, s, g$ dropped):
+
+| term of our likelihood | becomes |
+|---|---|
+| $\big(\tfrac{\nu}{2} - 1\big)\ln Y$ | $\big(\tfrac{\nu}{2} - 1\big)\ln\hat P^{\rm wdm} + \big(\tfrac{\nu}{2} - 1\big)\ln\tfrac{\nu}{2\Delta t}$ |
+| $-\tfrac{\nu}{2}\ln(2\sigma^2)$ | $-\tfrac{\nu}{2}\ln S^{\rm wdm} + \tfrac{\nu}{2}\ln\Delta t$ |
+| $-\ln\Gamma\big(\tfrac{\nu}{2}\big)$ | $-\ln\Gamma\big(\tfrac{\nu}{2}\big)$ |
+| $-\dfrac{Y}{2\sigma^2}$ | $-\dfrac{\nu}{2}\,\dfrac{\hat P^{\rm wdm}}{S^{\rm wdm}}$ |
+
+Adding the rows,
+
+$$
+\ln p(Y\mid\theta) = -\left[\ln\Gamma\Big(\frac{\nu_g}{2}\Big) + \frac{\nu_g}{2}\ln S^{\rm wdm}_{c,sg}
+- \Big(\frac{\nu_g}{2} - 1\Big)\ln\hat P^{\rm wdm}_{c,sg} + \frac{\nu_g}{2}\,\frac{\hat P^{\rm wdm}_{c,sg}}{S^{\rm wdm}_{c,sg}}\right]
++ C_g,
+\qquad C_g = \frac{\nu_g}{2}\ln\frac{\nu_g}{2} - \ln\frac{\nu_g}{2\Delta t}.
+$$
+
+The bracket is **term by term the bracket of their Eq. 9**, under the dictionary
+
+| arXiv:2511.03604 | this pipeline | role |
+|---|---|---|
+| chunk $i$ | time block $s$ | time index of a likelihood term |
+| channel $j$ | channel $c$ | |
+| coarse frequency bin $m$, set $\mathcal F_m$ | frequency group $g$, set $\mathcal M_g$ (and $\mathcal N_s$) | |
+| $\hat P^{\,i}_{jm}$, averaged periodogram | $\hat P^{\rm wdm}_{c,sg} = 2\Delta t\,Y_{c,sg}/\nu_g$ | **data** |
+| $S^{\,i}_{jm}(\theta) = \overline M^{\,i}_j S^{\rm GF}_m + S^{(n)}_{jm}$ | $S^{\rm wdm}_{c,sg} = P_c(\bar t_s)\bar S_{{\rm gal},g} + \bar S_{n,c,g}$ | **model**: noise + modulated galaxy |
+| $\overline M^{\,i}_j$, envelope averaged over the chunk | $P_c(\bar t_s)$, modulation at the block centre | galactic modulation |
+| $S^{\rm GF}_m$ | $\bar S_{{\rm gal},g}$ | galactic spectrum |
+| $S^{(n)}_{jm}$ | $\bar S_{n,c,g}$ | instrument noise |
+| $n_{b_m}$, number of averaged values | $\nu_g$, number of averaged pixels | degrees of freedom (see 6.3) |
+
+and $C_g$ depends only on $\nu_g$ and $\Delta t$, not on $\theta$ or the data. (It is the paper's omitted
+$\tfrac{\nu}{2}\ln\tfrac{\nu}{2}$ plus the Jacobian $\ln\lvert dY/d\hat P^{\rm wdm}\rvert$ between the two data
+variables.) Summing over $c, s, g$:
+
+$$
+\ln\mathcal L_{\rm ours}(\boldsymbol Y\mid\theta) = \sum_{s}\ \ln\mathcal L_G^{\rm Eq.\,9}
+\big(\hat{\boldsymbol P}^{\rm wdm}_{s}\mid\theta\big)\Big\rvert_{n_{b_m}\to\nu_g,\ S\to S^{\rm wdm}}
++ \text{const}.
+$$
+
+A constant offset does not change the posterior, so **our likelihood is the paper's Eq. 9 applied to wavelet
+periodograms**, with time blocks in the role of chunks. Two modelling differences remain, both outside Eq. 9 itself:
+the galaxy modulation is evaluated at the block centre instead of averaged over the chunk (a 20-h block against a
+modulation that varies over days), and the PSD is averaged over the WDM spectral window (Section 3.4).
+
+### 6.3 The degrees of freedom: where the two domains differ
+
+The Gamma form with shape $n/2$ is exact when the averaged quantity is a mean of $n$ independent terms, each
+$S\,\chi^2_1$, i.e. $n$ **real** Gaussian degrees of freedom. The two domains differ here.
+
+* **Wavelet domain.** Each $w_{c,nm}$ is one real Gaussian (Section 3.4), so $2\Delta t\,w^2 = \langle S\rangle\,\chi^2_1$
+  and the shape $\nu_g/2$ with $\nu_g$ = number of pixels is exact.
+* **Fourier domain.** Each $\tilde d_{jk}$ is a *complex* circular Gaussian: real and imaginary parts are independent
+  with variance $S/2$ each, so $\lvert\tilde d_{jk}\rvert^2 = \tfrac S2\,\chi^2_2$, two real degrees of freedom. A mean of
+  $n_{b_m}$ of them is $\tfrac{S}{2n_{b_m}}\chi^2_{2n_{b_m}}$: shape $n_{b_m}$, not $n_{b_m}/2$. The exact chunked
+  likelihood is Eq. 9 with $n_{b_m} \to 2n_{b_m}$. As printed (and as in BAHAMAS' `gamma_lik`), Eq. 9 assumes twice
+  the actual variance of $\hat P$, $\mathrm{Var}\,\hat P = 2S^2/n_{b_m}$ instead of $S^2/n_{b_m}$, so its posteriors are
+  about $\sqrt2$ too wide. Run 2 measures $n_{b_m}\,\mathrm{Var}(\hat P/S) = 1.04 \pm 0.04$ on the simulated data,
+  confirming two degrees of freedom per frequency
+  ([WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md)).
+
+The degree-of-freedom count also agrees between the domains when it is written per unit of time-frequency area. A
+chunk of duration $T_i$ has Fourier frequencies spaced $1/T_i$, so a bin of width $\delta f$ holds
+$n_b = T_i\,\delta f$ complex values, i.e. $2T_i\,\delta f$ real degrees of freedom. The same rectangle holds
+$(T_i/\Delta T)(\delta f/\Delta F) = 2T_i\,\delta f$ WDM pixels (since $\Delta T\Delta F = \tfrac12$), each one real
+degree of freedom. So the correct correspondence is
+
+$$
+\nu_g \;\longleftrightarrow\; 2\,n_{b_m},
+$$
+
+the same information in both domains, as expected for two orthogonal transforms of the same data. The wavelet
+likelihood uses the exact $\nu_g$; the chunked one, as printed, uses $n_{b_m}$ where $2n_{b_m}$ is exact.
+
+---
+
+## 7. How the fit is done
 
 **Code:** [sampler.py](../bahamas/wavelet/sampler.py).
 
-### The likelihood as one JAX function
+### 7.1 Posterior
 
-[WaveletPosterior](../bahamas/wavelet/sampler.py#L98) maps the sources file to parameters and
-builds a single pure function
-[single(theta_psd, theta_env, atoms, masks)](../bahamas/wavelet/sampler.py#L216). It computes the
-band-averaged spectra ([spectra](../bahamas/wavelet/sampler.py#L183)) using the existing
-BAHAMAS spectral functions, then the modulation, then the likelihood. It is jit-compiled and
-vectorised over walkers with `vmap` (`WaveletPosterior.batch`), and it is differentiable
-(gradient checked against finite differences in
-[test_jit_vmap_and_grad_agree](../tests/test_wavelet_model.py#L186)).
+For `modulation: 'wavelets'` the parameters are
 
-An `optimization_barrier` between the spectra and the per-pixel loop
-([sampler.py:222](../bahamas/wavelet/sampler.py#L222)) stops XLA from fusing the expensive
-spectral evaluation into the pixel loop, which otherwise recomputes it for every time bin.
-On jax 0.4.30, the version pinned in `requirements.txt`, the function is not public and the
-barrier is skipped ([sampler.py:43](../bahamas/wavelet/sampler.py#L43)). Results are identical,
-just slower.
+* the spectral parameters $\theta_{\rm s}$: galaxy `alpha`, `amp`, `fknee`, `fr1`, `fr2`, noise `A`, `P`, and the
+  level $b_E$ (those with `bounds` in the sources file; uniform priors within them);
+* for each channel, the number of atoms $K_c$ and the atom parameters $\zeta_{c,k} = (u_{c,k}, \lambda_{c,k}, a_{c,k})$.
 
-### Eryn with reversible jump (`sampler: 'eryn'`)
-
-[WaveletSampler](../bahamas/wavelet/sampler.py#L328). Eryn branches:
-
-- `psd`: galaxy spectral parameters, noise parameters and the channel levels $b_c$ (one leaf);
-- `envelope`: sky-envelope parameters, for `parametric` with sampled sky parameters (one leaf);
-- `mod_A`, `mod_E`: one reversible-jump branch per channel whose leaves are wavelet atoms,
-  $K_c \in$ [`min_wavelets`, `max_wavelets`].
-
-Moves:
-
-- stretch moves on the fixed-dimension branches;
-- a Gaussian random walk on the atoms;
-- birth/death moves (`DistributionGenerateRJ`) per channel, proposing new atoms from the prior.
-
-Eryn runs in vectorised mode ([sampler.py:409](../bahamas/wavelet/sampler.py#L409)): each
-likelihood request becomes one compiled batch call. The leaves of all walkers are scattered
-into padded arrays by [_pad_leaves](../bahamas/wavelet/sampler.py#L85), and the batch is padded
-to a fixed size so it compiles once ([WaveletPosterior.\_\_call\_\_](../bahamas/wavelet/sampler.py#L238)).
-
-Two eryn details were needed to make the reversible jump correct, both found by testing:
-
-1. **$K = 0$ must be reachable.** Eryn sets the log prior to $-\infty$ when a Gibbs-restricted
-   RJ move empties every branch it acts on. Each RJ move is therefore grouped with the `psd`
-   branch, which has a fixed leaf count and is never changed by it
-   ([sampler.py:398](../bahamas/wavelet/sampler.py#L398)). Without this, $K = 0$ was never
-   visited and every Bayes factor against it was wrong.
-2. **The prior on $K$ is uniform.** Eryn's birth/death move includes the edge corrections at
-   $K_{\min}$ and $K_{\max}$. This was checked with a flat likelihood
-   ([test_prior_only_k_is_uniform](../tests/test_wavelet_rj.py#L32)).
-
-### Bayes factor versus number of wavelets
-
-With a uniform prior on $K$, the Bayes factor between two values of $K$ is their posterior
-odds, read directly from the RJ chain:
+The posterior is
 
 $$
-\ln \mathcal B(K, K_{\rm ref}) = \ln\frac{p(K\mid d)}{p(K_{\rm ref}\mid d)} ,
+p\big(\theta_{\rm s}, \lbrace K_c, \zeta_{c,1..K_c}\rbrace \mid \boldsymbol Y\big) \;\propto\;
+\mathcal L\big(\boldsymbol Y\mid\theta_{\rm s}, \lbrace\zeta\rbrace\big)\ \pi(\theta_{\rm s})
+\prod_{c\in\lbrace A,E\rbrace}\Big[\pi(K_c)\prod_{k=1}^{K_c}\pi(\zeta_{c,k})\Big],
 $$
 
-with $K_{\rm ref}$ the most probable value. Errors come from splitting the chain into
-consecutive blocks; values of $K$ never visited get an upper limit. Code:
-[bayes_factors](../bahamas/wavelet/sampler.py#L279), plotted by
-[plot_bayes_factors](../bahamas/wavelet/plotting.py#L41).
+with $\mathcal L$ the boxed likelihood of Section 5.2 and $P_c(t)$ from Section 4.1. Its dimension changes with
+$K_c$, so it is sampled with reversible-jump MCMC.
 
-### NUTS (`sampler: 'NUTS'`)
+### 7.2 One likelihood call
 
-[run_nuts](../bahamas/wavelet/sampler.py#L495) samples the fixed-dimension models (`parametric`,
-`none`) with NumPyro's NUTS, as in the chunked pipeline (uniform priors within the source
-bounds). It uses gradients of the same JAX likelihood. NUTS cannot change the number of
-atoms, so `wavelets` requires eryn.
+[WaveletPosterior.single](../bahamas/wavelet/sampler.py#L216) maps one point to $\ln\mathcal L$ in four steps:
+
+1. $S_{\rm gal}$ and $S_{n,c}$ on the window sub-samples, band-averaged per group to $\bar S_{{\rm gal},g}$,
+   $\bar S_{n,c,g}$ ([spectra](../bahamas/wavelet/sampler.py#L183));
+2. $P_c(\bar t_s)$ from the atoms (inactive slots masked, see below);
+3. $\sigma^2_{c,sg}$;
+4. the boxed sum over $c, s, g$.
+
+It is pure JAX: jit-compiled, `vmap`-ed over walkers (`WaveletPosterior.batch`) and differentiable
+([test_jit_vmap_and_grad_agree](../tests/test_wavelet_model.py#L186)). Atoms are passed padded to `max_wavelets` with a
+boolean mask, so array shapes are fixed. Inactive slots are replaced by a zero-amplitude atom before any arithmetic,
+because eryn stores NaN there ([model.py:318](../bahamas/wavelet/model.py#L318)). An `optimization_barrier`
+([sampler.py:222](../bahamas/wavelet/sampler.py#L222)) stops XLA from recomputing the spectra for every time block
+(skipped on jax 0.4.30, where it is not public; results identical, just slower).
+
+### 7.3 Reversible-jump MCMC (eryn)
+
+[WaveletSampler](../bahamas/wavelet/sampler.py#L328). Branches: `psd` ($\theta_{\rm s}$, one leaf), `envelope` (sky
+parameters, `parametric` only), and `mod_A`, `mod_E` (one leaf per atom, $K_c$ leaves). Moves:
+
+* **within a model** (fixed $K$): stretch moves on `psd`; a Gaussian random walk on the atoms, with step
+  `atom_step` (2%) of each prior width;
+* **between models**: birth/death moves per channel (`DistributionGenerateRJ`). A birth draws a new atom from its
+  prior $\pi(\zeta)$; a death removes a random atom. Because the new atom is drawn from its prior, its prior density
+  cancels the proposal density and the acceptance probability reduces to the likelihood ratio times the ratio of
+  move-selection probabilities. eryn includes the edge corrections at $K_{\min}$ and $K_{\max}$, so the prior on $K$
+  is uniform ([test_prior_only_k_is_uniform](../tests/test_wavelet_rj.py#L32)).
+* **parallel tempering**: `ntemps` copies of the ensemble at inverse temperatures $1 = \beta_0 > \beta_1 > \dots$
+  sample $\mathcal L^{\beta}\pi$ and swap states; hot chains change $K$ more easily.
+
+**Walkers.** The injection runs use **32 walkers per temperature × 4 temperatures = 128 walkers**. Only the 32
+walkers of the cold chain ($\beta = 1$) sample the posterior; all results use them. Every walker starts at $K_c = 0$,
+with $\theta_{\rm s}$ in a small ball around the injection; 2000 burn-in steps are discarded and 6000 stored.
+Run 1 shows how the ensemble explores $K$ from the start, burn-in included (min–max band over the cold walkers):
+`data/wavelet_injection/outputs/run1/K_trace_burnin.png`, described in
+[WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md).
+
+Two eryn details were needed for a correct reversible jump, both found by testing:
+
+1. **$K = 0$ must be reachable.** eryn sets the log prior to $-\infty$ when a Gibbs-restricted RJ move empties every
+   branch it acts on. Each RJ move is therefore grouped with the `psd` branch, whose leaf count is fixed
+   ([sampler.py:398](../bahamas/wavelet/sampler.py#L398)). Without this, $K = 0$ was never visited.
+2. **The prior on $K$ is uniform**, checked with a flat likelihood (test above).
+
+### 7.4 Bayes factor versus the number of atoms
+
+With a uniform prior on $K_c$, the Bayes factor between two values is their posterior odds, read from the chain:
+
+$$
+\ln\mathcal B(K, K') = \ln\frac{p(K_c = K\mid\boldsymbol Y)}{p(K_c = K'\mid\boldsymbol Y)},
+\qquad p(K_c = K\mid\boldsymbol Y) \approx \frac{\#\lbrace\text{cold samples with } K_c = K\rbrace}{\#\lbrace\text{cold samples}\rbrace}.
+$$
+
+$K'$ is the most probable value. Errors come from splitting the chain into consecutive blocks; never-visited values
+get an upper limit. Code: [bayes_factors](../bahamas/wavelet/sampler.py#L279).
+
+### 7.5 The reference fit (the run-1 injection)
+
+Run 1 injects a modulation the atom model represents exactly: the least-squares atom fit to the true envelope
+$M_c^2(t)$ (`data/wavelet_injection/fit_reference.py`). On an hourly grid $t_h$ over the 30 days it minimises, for
+$K = 0, 1, \dots$,
+
+$$
+\frac{1}{N_h}\sum_h\Big[b_c + \sum_{k=1}^{K} a_k\,\psi\Big(\frac{t_h - t_k}{\tau_k}\Big) - \ln M_c^2(t_h)\Big]^2
++ \epsilon\sum_k a_k^2,\qquad \epsilon = 10^{-6},
+$$
+
+with L-BFGS-B and random restarts, within the inference priors (centres kept 0.6 d from the ends). It keeps the
+smallest $K$ with an rms error in $P$ below 1% (A: $K = 2$, E: $K = 1$). The small penalty picks the
+smallest-amplitude solution along the level/width degeneracy. The fit is written in the inference parametrisation
+${\rm amp}_{\rm eff} = {\rm amp} + b_A/\ln 10$, $b_E \to b_E - b_A$ (Section 4.2).
+
+### 7.6 NUTS for the fixed-dimension models
+
+[run_nuts](../bahamas/wavelet/sampler.py#L495) samples `parametric` and `none` with NumPyro's NUTS, using gradients of
+the same likelihood. NUTS cannot change $K$, so `wavelets` needs eryn.
 
 ---
 
-## 7. Validation
+## 8. Code overview
 
-The tests are in [tests/test_wdm.py](../tests/test_wdm.py),
-[tests/test_wavelet_model.py](../tests/test_wavelet_model.py) and
-[tests/test_wavelet_rj.py](../tests/test_wavelet_rj.py) (46 tests, about 2 minutes). They pass
-with the latest packages (jax 0.6.2) and with the versions pinned in `requirements.txt`
-(jax 0.4.30, numpy 1.26, scipy 1.13).
+| Step | What happens | Code |
+|---|---|---|
+| Simulate | one continuous series per channel, $n_c + \sqrt{P_c}\,g_c$ | [simulate.py](../bahamas/wavelet/simulate.py) |
+| Transform | WDM to an $N_t \times N_f$ grid | [wdm.py](../bahamas/wavelet/wdm.py) |
+| Likelihood | Gaussian per pixel or Gamma per group | [model.py](../bahamas/wavelet/model.py) |
+| Sampling | eryn with reversible jump, or NUTS | [sampler.py](../bahamas/wavelet/sampler.py) |
+| Pipeline | config-driven data generation, inference, plots | [pipeline.py](../bahamas/wavelet/pipeline.py), [plotting.py](../bahamas/wavelet/plotting.py) |
+| CLI hooks | `bahamas_data` / `bahamas_inference` dispatch on `domain: 'wavelet'` | [run_data.py:28-33](../bahamas/utilities/run_data.py#L28-L33), [run_pe.py:35-46](../bahamas/utilities/run_pe.py#L35-L46) |
+| Injection runs | 30-day injections, comparison with the chunked pipeline | [data/wavelet_injection/](../data/wavelet_injection/README.md) |
+
+---
+
+## 9. Validation
+
+Tests: [tests/test_wdm.py](../tests/test_wdm.py), [tests/test_wavelet_model.py](../tests/test_wavelet_model.py),
+[tests/test_wavelet_rj.py](../tests/test_wavelet_rj.py) (46 tests, about 2 minutes). They pass with the latest packages
+(jax 0.6.2) and with the versions pinned in `requirements.txt` (jax 0.4.30, numpy 1.26, scipy 1.13).
 
 **Transform**
 
 | Check | Test |
 |---|---|
 | Orthonormal ($\sum w^2 = \sum x^2$) and exactly invertible (error $\sim 10^{-15}$), several grid shapes | [test_orthonormal_and_invertible](../tests/test_wdm.py#L11) |
-| Agrees with `pywavelet` coefficient by coefficient (theirs is $\sqrt 2\times$ ours, a normalisation convention); checked with `pywavelet` 0.2.6, 0.2.7 and 0.2.10 | [test_matches_pywavelet](../tests/test_wdm.py#L35) |
+| Agrees with `pywavelet` coefficient by coefficient (theirs is $\sqrt 2\times$ ours); `pywavelet` 0.2.6, 0.2.7, 0.2.10 | [test_matches_pywavelet](../tests/test_wdm.py#L35) |
 | White noise gives unit-variance coefficients in every frequency row | [test_white_noise_variance](../tests/test_wdm.py#L57) |
 | A sine-Gaussian lands in the right time-frequency pixel | [test_localisation](../tests/test_wdm.py#L68) |
 | Band-averaged PSD predicts coloured-noise variances ($\chi^2$ test) | [test_band_average_matches_coloured_noise](../tests/test_wdm.py#L85) |
@@ -303,13 +624,13 @@ with the latest packages (jax 0.6.2) and with the versions pinned in `requiremen
 | Check | Test |
 |---|---|
 | Time average of $P_c(t)$ equals the chunked-analysis envelope ($10^{-7}$) | [test_power_modulation_averages_to_chunk_envelope](../tests/test_wavelet_model.py#L52) |
-| Simulated noise has the input PSD (Welch estimate, `scipy`) | [test_stationary_gaussian_matches_psd](../tests/test_wavelet_model.py#L61) |
+| Simulated noise has the input PSD (Welch estimate) | [test_stationary_gaussian_matches_psd](../tests/test_wavelet_model.py#L61) |
 | Modulated noise has pixel variances that follow $P(t)$ | [test_modulated_noise_variance_tracks_modulation](../tests/test_wavelet_model.py#L79) |
-| At the injected parameters, $w^2/\sigma^2$ has mean 1 and variance 2 ($\chi^2_1$) on a full simulated year | [test_whitened_coefficients](../tests/test_wavelet_model.py#L113) |
-| Gamma (binned) likelihood equals the Gaussian one up to a constant | [test_binned_likelihood_matches_pixel_likelihood_differences](../tests/test_wavelet_model.py#L124) |
+| At the injection, $w^2/\sigma^2$ has mean 1 and variance 2 ($\chi^2_1$) over a simulated year | [test_whitened_coefficients](../tests/test_wavelet_model.py#L113) |
+| Gamma (grouped) likelihood equals the Gaussian one up to a constant | [test_binned_likelihood_matches_pixel_likelihood_differences](../tests/test_wavelet_model.py#L124) |
 | The injected envelope beats a stationary galaxy and a wrong sky position by $\Delta\ln\mathcal L > 100$ | [test_likelihood_prefers_injected_modulation](../tests/test_wavelet_model.py#L172) |
 | `jit`, `vmap` and `grad` agree with plain evaluation and finite differences | [test_jit_vmap_and_grad_agree](../tests/test_wavelet_model.py#L186) |
-| Eryn's batched interface gives the same values as single-walker evaluation | [test_eryn_vectorised_interface](../tests/test_wavelet_model.py#L219) |
+| eryn's batched interface gives the same values as single-walker evaluation | [test_eryn_vectorised_interface](../tests/test_wavelet_model.py#L219) |
 | A short NUTS run brackets the injected values | [test_nuts_recovers_amplitude](../tests/test_wavelet_model.py#L249) |
 
 **Reversible jump**
@@ -317,19 +638,16 @@ with the latest packages (jax 0.6.2) and with the versions pinned in `requiremen
 | Check | Test |
 |---|---|
 | Flat likelihood: $p(K)$ uniform over $0..4$, $\ln\mathcal B \approx 0$ | [test_prior_only_k_is_uniform](../tests/test_wavelet_rj.py#L32) |
-| Factorised likelihood with a closed-form answer $p(K) \propto c^K$: reproduced to $\sim 1\%$ | [test_rj_matches_analytic_k_posterior](../tests/test_wavelet_rj.py#L51) |
-| Data generated with known $K$ (0 and 2): fewer atoms excluded, more atoms disfavoured | [test_posterior_prefers_true_number_of_wavelets](../tests/test_wavelet_rj.py#L115) |
+| Factorised likelihood with closed-form $p(K) \propto c^K$: reproduced to $\sim 1\%$ | [test_rj_matches_analytic_k_posterior](../tests/test_wavelet_rj.py#L51) |
+| Data with known $K$ (0 and 2): fewer atoms excluded, more disfavoured | [test_posterior_prefers_true_number_of_wavelets](../tests/test_wavelet_rj.py#L115) |
 | Started with no atoms, the sampler finds both injected features | [test_rj_detects_modulation_from_scratch](../tests/test_wavelet_rj.py#L132) |
 
-**End to end.** The quick config (one year, $\Delta t = 1000$ s, A and E) runs through the
-command-line tools in about 1.5 minutes on a laptop. The reconstructed modulation contains
-the injected one within the 90% band over the whole year in both channels, and $K \le 1$ is
-excluded. Recomputing $\ln\mathcal L$ from the stored chain reproduces eryn's stored values
-exactly.
+**Injection runs.** 30-day injection and recovery, and the comparison with the chunked pipeline on the same data:
+[WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md).
 
 ---
 
-## 8. How to run
+## 10. How to run
 
 ```bash
 uv sync --extra test          # or: pip install -e ".[test]"
@@ -342,112 +660,97 @@ bahamas_inference --config config_wavelet_quick.yaml --sources pe_galaxy_cyclo.y
 
 Templates:
 
-- [template/config_wavelet_quick.yaml](../template/config_wavelet_quick.yaml): laptop-sized, a
-  few minutes. One year at $\Delta t = 1000$ s analysed in $[10^{-4}, 4.9\times10^{-4}]$ Hz.
-- [template/config_wavelet.yaml](../template/config_wavelet.yaml): realistic. One year at
-  $\Delta t = 10$ s, $[10^{-4}, 0.029]$ Hz, $N_f = 4096$ ($\Delta F = 1.2\times10^{-5}$ Hz,
-  $\Delta T = 11.4$ h), 200 log frequency bins, `time_bin: 4`. Every option is commented.
+- [template/config_wavelet_quick.yaml](../template/config_wavelet_quick.yaml): laptop-sized, a few minutes. One year at
+  $\Delta t = 1000$ s, analysed in $[10^{-4}, 4.9\times10^{-4}]$ Hz.
+- [template/config_wavelet.yaml](../template/config_wavelet.yaml): realistic. One year at $\Delta t = 10$ s,
+  $[10^{-4}, 0.029]$ Hz, $N_f = 4096$ ($\Delta F = 1.2\times10^{-5}$ Hz, $\Delta T = 11.4$ h), 200 log frequency
+  groups, `time_bin: 4`. Every option is commented.
 
 Outputs (in `folder_plot` and `inference.file_post`):
 
 | File | Content |
 |---|---|
-| `result_*.npz` | chains (`psd_chain`, `envelope_chain`, `mod_<ch>_atoms/_inds/_nleaves`), `log_like`, Bayes factors (`mod_<ch>_bayes_*`), modulation quantiles |
+| `result_*.npz` | chains (`psd_chain`, `envelope_chain`, `mod_<ch>_atoms/_inds/_nleaves`), `log_like`, Bayes factors, modulation quantiles |
 | `wavelet_bayes_factor_*.png` | posterior on $K$ and $\ln\mathcal B$ versus $K$, per channel |
-| `wavelet_modulation_*.png` | reconstructed $10^{\Delta\rm amp}P_c(t)$ with 50%/90% bands and the injection |
-| `wavelet_k_trace_*.png` | mean $K$ versus step, to check convergence |
+| `wavelet_modulation_*.png` | reconstructed $10^{\Delta\log_{10}A}P_c(t)$ with 50%/90% bands and the injection |
+| `wavelet_k_trace_*.png` | mean $K$ versus stored step |
 | `wavelet_corner_*.png` | corner plots of the spectral (and envelope) parameters |
 | `wavelet_data_*.png` | wavelet power of the data |
 
-Main options, in the `wavelet:` and `inference:` sections of the config:
+Main options (`wavelet:` and `inference:` sections):
 
-| Option | Meaning |
-|---|---|
-| `domain: 'wavelet'` | selects this pipeline (default `'stft'`, the chunked one) |
-| `wavelet.Nf` | number of WDM frequency bins (must be even) |
-| `wavelet.freq_bins`, `wavelet.time_bin` | coarse graining (`null` / `1` = per pixel) |
-| `wavelet.edge_bins` | time pixels dropped at each end |
-| `inference.modulation` | `wavelets`, `parametric` or `none` |
-| `inference.sampler` | `eryn` (any model) or `NUTS` (`parametric`, `none`) |
-| `inference.min_wavelets`, `max_wavelets` | range of $K$ per channel |
-| `inference.width_range_days`, `amp_range`, `level_range` | priors of the wavelet model |
-| `inference.ntemps` | parallel-tempering temperatures (helps the RJ mix) |
+| Option | Meaning | Symbol |
+|---|---|---|
+| `domain: 'wavelet'` | selects this pipeline (default `'stft'`) | |
+| `wavelet.Nf` | number of WDM frequency pixels (even) | $N_f$ |
+| `wavelet.nx` | steepness of the Meyer window | $d$ |
+| `wavelet.freq_bins` | number of log frequency groups (`null` = per pixel) | $N_g$ |
+| `wavelet.time_bin` | time pixels per block (`1` = per pixel) | $n_\tau$ |
+| `wavelet.edge_bins` | time pixels dropped at each end | |
+| `inference.modulation` | `wavelets`, `parametric` or `none` | |
+| `inference.sampler` | `eryn` (any model) or `NUTS` (`parametric`, `none`) | |
+| `inference.min_wavelets`, `max_wavelets` | range of $K_c$ | $K_{\min}, K_{\max}$ |
+| `inference.width_range_days`, `amp_range`, `level_range` | atom and level priors | $\tau_k$, $a_k$, $b_E$ |
+| `inference.ntemps` | parallel-tempering temperatures | |
 
 ---
 
-## 9. Performance
+## 11. Performance
 
 Measured on a laptop CPU (WSL):
 
-- Realistic config, data generation: about 15 s, about 1.1 GB peak memory (the cost of JAX's
-  random numbers, FFTs and interpolation on a $3\times10^6$-sample series).
-- Realistic config, likelihood with `time_bin: 4`: about 1.3–1.5 ms per walker in a batch of
-  64 walkers, compared with 4–11 ms per walker for the first (NumPy) version. A full eryn run
-  (32 walkers, 2 temperatures, 5000 steps) is therefore roughly 45 minutes.
-- On CPU, JAX is not much faster than NumPy for the per-pixel arithmetic itself. The gains are
-  from compiling the whole likelihood, from batching walkers, from gradients (NUTS), and from
-  running on a GPU.
+- Realistic config, data generation: about 15 s and 1.1 GB peak memory ($3\times10^6$-sample series).
+- Realistic config, likelihood with `time_bin: 4`: about 1.3–1.5 ms per walker in a batch of 64, against 4–11 ms for
+  the first (NumPy) version. A full eryn run (32 walkers, 2 temperatures, 5000 steps) takes roughly 45 minutes.
+- Injection runs (30 days, $N_f = 3600$, 32 walkers × 4 temperatures, 8000 steps): about 40 minutes on 8 cores.
+- On CPU the gains of JAX come from compiling the whole likelihood, batching walkers, gradients (NUTS) and GPUs, not
+  from the per-pixel arithmetic.
 
 ---
 
-## 10. Limitations and open points
+## 12. Limitations and open points
 
-1. **RJ mixing from scratch.** New atoms are proposed from the prior, and there is no
-   split/merge move. Started from $K = 0$, walkers can build one feature out of several
-   partial atoms and stay at too-high $K$ for a long time. Started from the truth, the
-   posterior correctly prefers the true $K$ (tests above). Use tempering (`ntemps`), long
-   runs, and check `wavelet_k_trace_*.png`. Data-driven birth proposals (as in BayesWave) are
-   the natural improvement.
-2. **$K$ is only well defined where the galaxy dominates.** Where the galaxy is below the
-   noise, negative or narrow atoms barely change the total variance and cost almost nothing,
-   so the posterior on $K$ flattens. This is the correct posterior, not a sampler problem. In
-   the quick config's band the galaxy is at most about 0.3 of the noise. In the realistic band
-   it dominates between roughly $3\times10^{-4}$ and $3\times10^{-3}$ Hz.
-3. **Spectral shape in the quick config.** Its band lies below the galaxy's knee
-   ($\sim 2.5\times10^{-3}$ Hz), so `alpha`, `fknee`, `fr1` and `fr2` are essentially
-   unconstrained there. NUTS then takes very deep trees (about 10 minutes for 800
-   iterations). Fix those parameters (no `bounds`) for quick runs.
-4. **Diagonal likelihood.** WDM coefficients are treated as independent. This is standard
-   for locally stationary noise and is supported by the whitening test, but correlations
-   between neighbouring pixels are neglected.
-5. **The wavelet pipeline needs the JAX backend.** With `--use_jax False` it stops with a
-   clear error. The chunked pipeline is unaffected.
-
-## 11. Next step: comparison with the chunked analysis
-
-The paper's chunked results can be compared directly with three runs on the same injection:
-
-1. `modulation: parametric` in the wavelet domain: same physics as the paper, different data
-   representation;
-2. `modulation: wavelets`: data-driven modulation, with the Bayes factor versus $K$;
-3. `modulation: none`: the stationary null model.
-
-A useful addition would be to generate the chunked (STFT) data from the **same continuous
-time series** as the wavelet data, so that both analyses see the same noise realisation.
+1. **RJ mixing from scratch.** New atoms are proposed from the prior, and there is no split/merge move. From $K = 0$,
+   walkers can build one feature out of several partial atoms and stay at too-high $K$ for a while. Use tempering,
+   long runs, and check the $K$ trace. Data-driven birth proposals (as in BayesWave) are the natural improvement.
+2. **$K$ is only well defined where the galaxy dominates.** Where the galaxy is below the noise, extra atoms barely
+   change the variance, so the posterior on $K$ flattens. Over 30 days of a smooth envelope, one to three atoms draw
+   the same curve (run 1), so $K$ is not identifiable there either; $10^{\Delta\log_{10}A}P_c(t)$ is the quantity to
+   compare.
+3. **Atom centres are confined to the data span** ($u_k \in [0, 1]$). Run 1 suggests extending this, since the data
+   would like an atom at or before the start.
+4. **Diagonal likelihood.** WDM coefficients are treated as independent and the variance as constant within a group.
+   This is standard for locally stationary noise and supported by the whitening test, but correlations between
+   neighbouring pixels are neglected.
+5. **Spectral shape in the quick config.** Its band lies below the galaxy's knee, so `alpha`, `fknee`, `fr1` and
+   `fr2` are unconstrained there and NUTS takes very deep trees. Fix them (no `bounds`) for quick runs.
+6. **The wavelet pipeline needs the JAX backend.** With `--use_jax False` it stops with a clear error.
 
 ---
 
-## 12. Other changes outside `bahamas/wavelet/`
+## 13. Other changes outside `bahamas/wavelet/`
 
 | File | Change |
 |---|---|
 | [bahamas/utilities/run_data.py](../bahamas/utilities/run_data.py#L28-L33) | dispatch to the wavelet data generation when `domain: 'wavelet'` |
 | [bahamas/utilities/run_pe.py](../bahamas/utilities/run_pe.py#L35-L46) | same for inference; the wavelet package is only imported for wavelet configs |
-| [bahamas/psd_response/modulation.py](../bahamas/psd_response/modulation.py#L8-L12) | `envelopes_gaussian` uses the backend `jnp` (JAX or NumPy, like `average_envelope.py`) so it can be traced; results unchanged |
-| [pyproject.toml](../pyproject.toml), [setup.py](../setup.py) | register `bahamas.wavelet`; optional `test` extra (`pytest`, `pywavelet`); `requires-python >= 3.10` (needed by `eryn`, which was already a dependency, and by jax; with `>= 3.8` `uv lock` fails, also before these changes) |
+| [bahamas/psd_response/modulation.py](../bahamas/psd_response/modulation.py#L8-L12) | `envelopes_gaussian` uses the backend `jnp` so it can be traced; results unchanged |
+| [pyproject.toml](../pyproject.toml), [setup.py](../setup.py) | register `bahamas.wavelet`; optional `test` extra (`pytest`, `pywavelet`); `requires-python >= 3.10` (needed by `eryn` and jax) |
 | [requirements.txt](../requirements.txt) | add `eryn` and `pywavelet==0.2.7` (0.2.8+ needs a newer astropy than the one pinned) |
 | [README.md](../README.md) | short section pointing to this option |
 | [template/config_wavelet.yaml](../template/config_wavelet.yaml), [template/config_wavelet_quick.yaml](../template/config_wavelet_quick.yaml) | new templates |
 
 ## References
 
-- F. Pozzoli et al., *Bahamas: BAyesian inference with HAmiltonian Montecarlo for
-  Astrophysical Stochastic background*, [arXiv:2506.22542](https://arxiv.org/abs/2506.22542)
-- N. J. Cornish, *Time-frequency analysis of gravitational wave data*,
-  Phys. Rev. D 102, 124038 (2020), [arXiv:2009.00043](https://arxiv.org/abs/2009.00043)
-- M. C. Digman, N. J. Cornish, *LISA gravitational wave sources in a time-varying galactic
-  stochastic background*, [arXiv:2212.04600](https://arxiv.org/abs/2212.04600)
-- V. Necula, S. Klimenko, G. Mitselmakher, *Transient analysis with fast Wilson-Daubechies
-  time-frequency transform*, J. Phys. Conf. Ser. 363, 012032 (2012)
+- R. Buscicchio, F. Pozzoli, D. Chirico, A. Sesana, *The first year of LISA Galactic foreground*,
+  [arXiv:2511.03604](https://arxiv.org/abs/2511.03604) (Eq. 9: the Gamma likelihood of Section 6)
+- F. Pozzoli et al., *Bahamas: BAyesian inference with HAmiltonian Montecarlo for Astrophysical Stochastic
+  background*, [arXiv:2506.22542](https://arxiv.org/abs/2506.22542)
+- N. J. Cornish, *Time-frequency analysis of gravitational wave data*, Phys. Rev. D 102, 124038 (2020),
+  [arXiv:2009.00043](https://arxiv.org/abs/2009.00043)
+- M. C. Digman, N. J. Cornish, *LISA gravitational wave sources in a time-varying galactic stochastic background*,
+  [arXiv:2212.04600](https://arxiv.org/abs/2212.04600)
+- V. Necula, S. Klimenko, G. Mitselmakher, *Transient analysis with fast Wilson-Daubechies time-frequency transform*,
+  J. Phys. Conf. Ser. 363, 012032 (2012)
 - M. L. Katz et al., Eryn: [github.com/mikekatz04/Eryn](https://github.com/mikekatz04/Eryn)
 - `pywavelet`: [pypi.org/project/pywavelet](https://pypi.org/project/pywavelet/)
