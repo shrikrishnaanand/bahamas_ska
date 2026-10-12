@@ -29,7 +29,7 @@ s2 0.1384, amp −43.943, alpha 1.8, fknee −2.177, fr1 −2.429, fr2 −3.488,
 | modulation | sky envelope, 5 parameters | free Gaussian atoms per channel, K ∈ [0, 8] by reversible jump, plus `level_E` |
 | sampler | nessai, 2000 live points, 8 cores, 15 min | eryn, 32 walkers × 4 temperatures, 2000 + 6000 steps from K = 0, 40 min |
 
-Compared quantity: the galactic power relative to the true amplitude, $10^{\log_{10}A-\log_{10}A_{\rm true}}\,P_c(t)$
+Compared quantity: the galactic power relative to the true amplitude, $10^{\log_{10}A-\log_{10}A_{\rm true}}\thinspace P_c(t)$
 (neither pipeline separates the amplitude from the modulation's mean level). Its truth is $M_c^2(t)$.
 
 ## Code flow

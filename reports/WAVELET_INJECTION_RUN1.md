@@ -30,7 +30,7 @@ is absorbed into the galactic amplitude, and `level_E` $= b_E - b_A$):
 | other spectral parameters | the injected values of `config/sources.yaml` |
 
 The atoms are drawn in the time domain under the injected $P_c(t)$ in `outputs/run1/injection.png`. Each one is
-$a_k\,\psi\big((t-t_k)/\tau_k\big)$ with $\psi(x) = e^{-x^2/2}$, in $\ln P$ units, over $\pm 2.5\,\tau_k$ around its
+$a_k\thinspace \psi\big((t-t_k)/\tau_k\big)$ with $\psi(x) = e^{-x^2/2}$, in $\ln P$ units, over $\pm 2.5\thinspace \tau_k$ around its
 centre. All three are wider than half the 30-day span, so the data see only part of each Gaussian. A is a deep wide dip
 centred at the start plus a shallower positive bump at day 15; E is one dip at day 10 on top of the level $b_E$. The
 model is defined in [WAVELET_README.md](WAVELET_README.md), Section 4.
@@ -95,8 +95,8 @@ acceptance 6.5%, RJ acceptance 0.7%. The median log L is 0.9 above the log L at 
 typical for ~17 free parameters.
 
 **Modulation: recovered** (`modulation_recovery.png`). The plotted quantity is
-$10^{\Delta\log_{10}A}\,P_c(t)$ with $\Delta\log_{10}A = {\rm amp} - {\rm amp}_{\rm inj}$: the galactic power of each
-posterior sample relative to the injected amplitude ($\rm amp = \log_{10}A_{\rm gal}$, ${\rm amp}_{\rm inj} = -43.171$).
+$10^{\Delta\log_{10}A}\thinspace P_c(t)$ with $`\Delta\log_{10}A = {\rm amp} - {\rm amp}_{\rm inj}`$: the galactic power of each
+posterior sample relative to the injected amplitude ($\rm amp = \log_{10}A_{\rm gal}$, $`{\rm amp}_{\rm inj} = -43.171`$).
 Only the product $A_{\rm gal}P_c(t)$ is measured, since a very wide atom is a constant in $\ln P_c$ that `amp` can
 cancel; dividing by the injected amplitude puts the product on the scale of the injected $P_c(t)$
 ([WAVELET_README.md](WAVELET_README.md), Section 4.2).
