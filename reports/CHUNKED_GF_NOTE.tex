@@ -1,0 +1,741 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+\PassOptionsToPackage{hyphens}{url}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!60!black,citecolor=blue!60!black]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+% ---------------------------------------------------------------------------
+% Links to the two papers. Every equation reference below is clickable.
+% ---------------------------------------------------------------------------
+\newcommand{\urlPone}{https://arxiv.org/pdf/2511.03604}
+\newcommand{\urlPtwo}{https://arxiv.org/pdf/2410.08263}
+\newcommand{\Pone}{\href{\urlPone}{Buscicchio, Pozzoli et al.~(2025)}}
+\newcommand{\Ptwo}{\href{\urlPtwo}{Buscicchio, Klein et al.~(2025)}}
+\newcommand{\PoneEq}[1]{\href{\urlPone}{Buscicchio, Pozzoli et al.~(2025), Eq.~(#1)}}
+\newcommand{\PtwoEq}[1]{\href{\urlPtwo}{Buscicchio, Klein et al.~(2025), Eq.~(#1)}}
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\Pbar}{\hat{P}}
+\newcommand{\Mbar}{\overline{M}}
+
+\newtcolorbox{remark}[1][]{colback=gray!6,colframe=gray!55,fonttitle=\bfseries,title=#1,breakable}
+\newtcolorbox{keybox}[1][]{colback=blue!4,colframe=blue!45!black,fonttitle=\bfseries,title=#1,breakable}
+
+\title{Chunked inference of the LISA Galactic foreground:\\ a step-by-step guide}
+\author{Shri Krishna Anand}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This note walks through the time--frequency (``chunked'') analysis of the Galactic
+foreground (GF) presented in \Pone, and through the envelope model of \Ptwo\ that it
+relies on. We follow the pipeline in the order in which it is executed: frequency
+grid, stationary spectra, orbital modulation, simulated data, coarse graining,
+Gamma likelihood and sampling. Every equation taken from the two papers is reproduced
+here, with a link to the paper and its original equation number, so the note can
+be read on its own. Where our reading differs from the printed equations, we say so
+explicitly.
+\end{abstract}
+
+\tableofcontents
+
+%============================================================================
+\section{The idea}
+%============================================================================
+
+The Galactic foreground is the incoherent superposition of millions of unresolved
+double white-dwarf binaries in the Milky Way. Its power spectrum is not constant in
+time. The Galaxy is concentrated towards the Galactic centre, and LISA's antenna
+pattern sweeps across it as the constellation orbits the Sun and rotates. The power
+in each TDI channel therefore rises and falls with a one-year period, twice per year.
+A process whose statistics vary periodically in time is called
+\emph{cyclostationary}.
+
+The modulation is \emph{slow}: it changes appreciably over weeks to months. This
+suggests the following strategy:
+\begin{enumerate}
+  \item split the data stream into $N_c$ non-overlapping \emph{chunks} of duration
+        $T$ (one to a few weeks);
+  \item inside each chunk, treat the data as \emph{stationary}, with a PSD whose
+        galactic part is scaled by the modulation averaged over that chunk;
+  \item treat different chunks as independent, so the total log-likelihood is a sum
+        over chunks.
+\end{enumerate}
+The same construction handles \emph{data gaps}. Chunks are simply placed in the
+stretches of data between gaps, and no special treatment of the gaps is needed.
+
+The total log-likelihood is (\PoneEq{1})
+\begin{equation}
+  \log\mathcal{L}(\boldsymbol{d}\mid\theta)
+  = \sum_{c=1}^{N_c} \log\mathcal{L}^{\rm chunk}(\boldsymbol{d}^c\mid\theta),
+  \label{eq:total}
+\end{equation}
+where $\boldsymbol{d}^c$ is the data of chunk $c$ and $\theta$ the full set of model
+parameters. The rest of this note explains what goes into a single
+$\log\mathcal{L}^{\rm chunk}$.
+
+\paragraph{Notation.}
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$c = 1,\dots,N_c$ & chunk index \\
+$j\in\{A,E\}$ & TDI channel \\
+$k = 1,\dots,n_f$ & fine (full-resolution) frequency bin \\
+$m = 1,\dots,n_g$ & coarse (log-spaced) frequency bin \\
+$l = 1,\dots,N$ & time sample within a chunk \\
+$T,\ \dd t$ & chunk duration, sampling cadence \\
+$N = T/\dd t,\ f_s = 1/\dd t$ & samples per chunk, sampling frequency \\
+$t^c_S,\ t^c_E$ & start and end time of chunk $c$ \\
+$S^c_{jk}(\theta)$ & model PSD of channel $j$, chunk $c$, frequency $f_k$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Overview.} \Cref{fig:flow} shows the whole pipeline. There are two
+branches. The \emph{data} branch (left) is executed \emph{once}, with the injected
+parameters. The \emph{model} branch (right) is executed at \emph{every} step of the
+sampler, with the trial parameters $\theta$. The two meet in the likelihood.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=4mm and 8mm,
+  box/.style={draw,rounded corners=2pt,align=center,font=\small,text width=6.2cm,inner sep=4pt,fill=white},
+  arr/.style={-{Latex[length=2mm]},thick}]
+  % data branch
+  \node[box] (g)  {Chunk grid: $[t^c_S,t^c_E]$, \ $f_k = k/T$};
+  \node[box,below=of g] (s)  {Stationary spectra $S^{\rm GF}(f_k)$, $S^{(n)}_j(f_k)$\\ (\S\ref{sec:spectra})};
+  \node[box,below=of s] (m)  {Chunk-averaged modulation $\Mbar^c_j$\\ (\S\ref{sec:modulation})};
+  \node[box,below=of m] (p)  {Total PSD $S^c_{jk}$ (\S\ref{sec:psd})};
+  \node[box,below=of p] (d)  {Draw $\Re\tilde d,\Im\tilde d \sim \mathcal{N}(0,S/2)$\\ (\S\ref{sec:data})};
+  \node[box,below=of d] (cg) {Average $|\tilde d_{jk}|^2$ in log bins $\to \Pbar^c_{jm},\, n_{b_m}$\\ (\S\ref{sec:coarse})};
+  % model branch
+  \node[box,right=12mm of s] (ms) {Same spectra at trial $\theta$,\\ at coarse frequencies $f_m$};
+  \node[box,below=of ms] (mm) {$\Mbar^c_j(\theta)$ for every chunk};
+  \node[box,below=of mm] (mp) {Model PSD $S^c_{jm}(\theta)$};
+  \node[box,below=12mm of mp,fill=blue!6] (L) {Gamma likelihood $\log\mathcal{L}(\Pbar\mid\theta)$\\ (\S\ref{sec:gamma})};
+  \node[box,below=of L,fill=blue!6] (smp) {Sampler (NUTS / nessai) proposes\\ the next $\theta$ (\S\ref{sec:inference})};
+  % arrows
+  \draw[arr] (g)--(s); \draw[arr] (s)--(m); \draw[arr] (m)--(p); \draw[arr] (p)--(d); \draw[arr] (d)--(cg);
+  \draw[arr] (ms)--(mm); \draw[arr] (mm)--(mp); \draw[arr] (mp)--(L);
+  \draw[arr] (cg.east) -- ++(4mm,0) |- (L.west);
+  \draw[arr] (L)--(smp);
+  \draw[arr] (smp.east) -- ++(5mm,0) |- (ms.east);
+  % labels
+  \node[font=\small\bfseries,above=1mm of g] {Data: once, injected $\theta$};
+  \node[font=\small\bfseries,above=1mm of ms] {Model: every step, trial $\theta$};
+\end{tikzpicture}
+\caption{The chunked pipeline. The data are generated once and then frozen. During
+sampling only the model branch is recomputed: no new random draws and no new coarse
+graining.}
+\label{fig:flow}
+\end{figure}
+
+%============================================================================
+\section{The frequency grid of a chunk}\label{sec:grid}
+%============================================================================
+
+A chunk of duration $T$ sampled at cadence $\dd t$ contains $N = T/\dd t$ samples.
+Its discrete Fourier transform lives on the grid
+\begin{equation}
+  f_k = \frac{k}{T}, \qquad \Delta f = \frac{1}{T},
+\end{equation}
+and $n_f$ denotes the number of grid points inside the analysis band
+$[f_{\min},f_{\max}]$, i.e.\ $n_f \simeq (f_{\max}-f_{\min})\,T$. Longer chunks give
+finer frequency resolution. With equal-duration chunks, every chunk has the
+\emph{same} grid.
+
+The Fourier amplitudes are normalised so that their squared modulus is a one-sided
+PSD estimate (\PoneEq{2}):
+\begin{equation}
+  \tilde d^{\,c}_{jk} = \sqrt{\frac{2}{W f_s}}\ \sum_{l=1}^{N} w_l\, d^{\,c}_{jl}\,
+  \exp\!\left[-\frac{2\pi\imath}{N}\,k\,l\right],
+  \qquad W=\sum_{l=1}^N |w_l|^2,
+  \label{eq:dft}
+\end{equation}
+where $w_l$ is a window function. For data generated directly in the frequency
+domain (\cref{sec:data}) no window is needed and $W=N$. With this normalisation
+$\langle|\tilde d^{\,c}_{jk}|^2\rangle = S^c_{jk}$.
+
+\paragraph{Full-resolution (Whittle) likelihood.}
+If the data in a chunk are Gaussian and stationary, the Fourier amplitudes at
+different frequencies are independent, and the chunk likelihood is the Whittle
+likelihood (\PoneEq{3}):
+\begin{equation}
+  \log\mathcal{L}^{\rm chunk}_W(\tilde{\boldsymbol d}^c\mid\theta) =
+  -\frac12 \sum_{j\in\{A,E\}} \sum_{k=1}^{n_f}
+  \left( \frac{|\tilde d^{\,c}_{jk}|^2}{S^c_{jk}(\theta)} + \log S^c_{jk}(\theta) + \log 2\pi \right).
+  \label{eq:whittle}
+\end{equation}
+It is exact but expensive. At every sampler step it costs
+$N_c\times 2\times n_f$ terms. For example, a two-week chunk has
+$\Delta f\approx 0.83\,\mu$Hz, so a band of tens of mHz holds tens of thousands of
+fine bins per channel and per chunk. This motivates the coarse-grained alternative
+of \cref{sec:coarse}.
+
+%============================================================================
+\section{Stationary spectra: Galactic foreground shape and instrument noise}\label{sec:spectra}
+%============================================================================
+
+\paragraph{Galactic foreground spectrum.} The spectral shape of the GF is the
+phenomenological model of \href{https://arxiv.org/abs/2103.14598}{Karnesis et al.~(2021)}
+(\PoneEq{11}):
+\begin{equation}
+  S^{\rm GF}(f) = \frac{A}{2}\, f^{-7/3}\,
+  \exp\!\left[-\left(\frac{f}{f_1}\right)^{\alpha}\right]
+  \left[1+\tanh\!\left(\frac{f_{\rm knee}-f}{f_2}\right)\right],
+  \label{eq:sgf}
+\end{equation}
+with amplitude $A$, slope parameter $\alpha$, and characteristic frequencies
+$f_1$, $f_{\rm knee}$, $f_2$. The $f^{-7/3}$ is the inspiral spectrum of a
+population of circular binaries. The $\tanh$ produces the high-frequency drop above
+$f_{\rm knee}$, where binaries become sparse enough to be resolved and subtracted.
+
+\paragraph{Instrument noise.} Two noise sources remain after TDI: test-mass (TM)
+acceleration noise and optical-metrology-system (OMS) noise (\PoneEq{16} and
+\PoneEq{17}):
+\begin{align}
+  S^n_{\rm tm}(f) &= \left(A_{\rm n}\times10^{-15}\,\mathrm{m\,s^{-2}\,Hz^{-1/2}}\right)^2
+  \frac{1}{(2\pi c f)^2}
+  \left[1+\left(\frac{0.4\,\mathrm{mHz}}{f}\right)^2\right]
+  \left[1+\left(\frac{f}{8\,\mathrm{mHz}}\right)^4\right], \label{eq:tm}\\
+  S^n_{\rm oms}(f) &= \left(P\times10^{-12}\,\mathrm{m\,Hz^{-1/2}}\right)^2
+  \left(\frac{2\pi f}{c}\right)^2
+  \left[1+\left(\frac{2\,\mathrm{mHz}}{f}\right)^4\right], \label{eq:oms}
+\end{align}
+where $c$ is the speed of light. (The paper calls the TM amplitude $A$; we write
+$A_{\rm n}$ to avoid a clash with the GF amplitude.) Both components are projected
+onto the A and E channels with the TDI transfer functions of
+\href{https://arxiv.org/abs/2211.02539}{Nam et al.~(2023)}, giving the channel noise
+PSD $S^{(n)}_{j}(f)$. The injected values are $A_{\rm n}=2.4$ and $P=7.9$.
+
+\begin{keybox}[Why these do not depend on the chunk]
+$S^{\rm GF}(f)$ and $S^{(n)}_j(f)$ depend only on frequency. They are evaluated on
+the chunk grid $f_k$, which is the same for every chunk. All the time dependence of
+the model comes from the modulation factor of \cref{sec:modulation}.
+\end{keybox}
+
+\begin{remark}[Remark: the GF shape evolves with observation time]
+In \Pone, $f_1$ and $f_{\rm knee}$ are not constants but functions of the total
+observation time (\PoneEq{12} and \PoneEq{13}):
+\begin{equation}
+  \log_{10} f_1 = a_1 \log_{10}(T_{\rm obs}) + b_1, \qquad
+  \log_{10} f_{\rm knee} = a_{\rm knee} \log_{10}(T_{\rm obs}) + b_{\rm knee},
+\end{equation}
+with calibrated values $a_1=-0.25$, $b_1=-2.7$, $a_{\rm knee}=-0.27$,
+$b_{\rm knee}=-2.47$. Both slopes are negative. The longer LISA observes, the more
+binaries are resolved and subtracted, and the cutoff moves to lower frequency.
+
+To mimic a global fit, where the foreground estimate is continuously updated as
+individual sources are added or removed, the paper simulates the chunks
+\emph{sequentially}. Each new chunk's spectrum uses the observation time
+accumulated up to that chunk. The GF spectrum then drifts slowly to lower frequency
+from chunk to chunk, on top of the up-and-down drift caused by the modulation. If
+$T_{\rm obs}$ is held fixed, as in the rest of this note, the shape is the same for
+all chunks.
+\end{remark}
+
+%============================================================================
+\section{The orbital modulation}\label{sec:modulation}
+%============================================================================
+
+The modulation is derived in \Ptwo\ (main text Sec.~6 and Appendix~A) in the
+\emph{low-frequency approximation}. In this limit, A and E behave as two independent
+effective Michelson interferometers whose orientation follows LISA's orbit.
+
+\subsection{Step 1: many sources at a single sky location}
+
+Consider a large number of binaries at the same sky position: ecliptic latitude and
+longitude $(b_S,l_S)$. Their inclinations $\iota$ and polarisation angles $\psi$ are
+random. The squared response is averaged over the gravitational-wave period and over
+these angles (\PtwoEq{27}):
+\begin{equation}
+  \langle h_{A,E}\rangle^2(t,b_S,l_S) = \frac{1}{T}\int_0^T \dd t'
+  \int_{-1}^{1}\dd\cos\iota \int_0^{2\pi}\dd\psi\ h^2_{A,E}.
+  \label{eq:env27}
+\end{equation}
+Here $T$ is the \emph{period of the gravitational wave} (minutes to hours). The
+average removes the fast oscillation of the signal and keeps only its slowly
+varying amplitude. The result still depends on time $t$, but only through LISA's
+annual motion.
+
+The averaged envelope is most conveniently written through the sum and difference
+of the two channels. Both are short Fourier series in the orbital phase
+(\PtwoEq{A.35}--\href{\urlPtwo}{(A.40)}):
+\begin{align}
+  h_S^2 &\equiv \langle h_A\rangle^2 + \langle h_E\rangle^2
+         = \sum_{n=0}^{4} h^2_{S;(n)}(b_S)\, \cos\big(n\,\Delta l_L\big), \\
+  h_D^2 &\equiv \langle h_A\rangle^2 - \langle h_E\rangle^2
+         = \sum_{n=0}^{8} h^2_{D;(n)}(b_S)\, \cos\big(n\,\Delta l_L + 4\bar l_S\big),
+\end{align}
+with $\Delta l_L = \Omega t - l_S$, $\bar l_S = l_S + \pi/12$, $\Omega = 2\pi/{\rm yr}$.
+The coefficients $h^2_{S;(n)}$, $h^2_{D;(n)}$ are polynomials in $\sin b_S$ and
+$\cos b_S$ (\PtwoEq{A.41}--\href{\urlPtwo}{(A.54)}). For example,
+$h^2_{S;(0)} = \tfrac{9}{320}\left(328 + 152\cos^2 b_S - 37\cos^4 b_S\right)$.
+So the sum $A^2+E^2$ contains harmonics up to $4\Omega$, and the difference up to
+$8\Omega$.
+
+\subsection{Step 2: a model for the sky distribution}
+
+The Galaxy is not a point. Its unresolved binaries are modelled with a (deliberately
+simple, and admittedly unrealistic) bivariate Gaussian on the sky
+(\PtwoEq{A.55}--\href{\urlPtwo}{(A.57)}):
+\begin{equation}
+  p(b_S,l_S) = \frac{1}{2\pi\sigma_1\sigma_2}\exp\!\left[-\frac12\,\boldsymbol\theta^T\mathbb{M}\,\boldsymbol\theta\right],
+  \qquad
+  \boldsymbol\theta = \begin{pmatrix} b_S-b_M\\ l_S-l_M\end{pmatrix},
+\end{equation}
+\begin{equation}
+  \mathbb{M} =
+  \begin{pmatrix}\cos\delta & \sin\delta\\ -\sin\delta & \cos\delta\end{pmatrix}
+  \begin{pmatrix}\sigma_1^{-2} & 0\\ 0 & \sigma_2^{-2}\end{pmatrix}
+  \begin{pmatrix}\cos\delta & -\sin\delta\\ \sin\delta & \cos\delta\end{pmatrix}.
+\end{equation}
+It is centred on the Galactic centre $(b_M,l_M)$, has standard deviations
+$\sigma_{1,2}$ along its principal axes, and is rotated by an angle $\delta$
+relative to the ecliptic.
+
+\subsection{Step 3: integrate over the sky}
+
+The envelope of the whole Galaxy is the single-location envelope weighted by $p$ and
+integrated over the sky (\PtwoEq{A.58}):
+\begin{equation}
+  H^2_{S,D}(t) = \int_{\mathbb{R}}\cos b_S\,\dd b_S\int_{\mathbb{R}}\dd l_S\
+  p(b_S,l_S)\, h^2_{S,D}.
+\end{equation}
+For simplicity the integral runs over the whole plane rather than over the sphere.
+This is a good approximation as long as $p$ falls off quickly. The integral can be
+done in closed form because every term of $h^2_{S,D}$ is a product of sines and
+cosines of $b_S$ and $l_S$. The integral of $e^{\imath n b_S}e^{\imath m l_S}$
+against a Gaussian is again a Gaussian factor (its characteristic function,
+\PtwoEq{A.59}). Each harmonic is therefore damped by a factor that depends on the
+widths and orientation of the Galaxy. With the shorthand (\PtwoEq{A.63}--\href{\urlPtwo}{(A.69)})
+\begin{equation}
+  \sigma_S^2=\sigma_1^2+\sigma_2^2,\quad
+  \sigma_D^2=\sigma_1^2-\sigma_2^2,\quad
+  \sigma_c^2=\sigma_D^2\cos2\delta,\quad
+  \sigma_s^2=\sigma_D^2\sin2\delta,\quad
+  \sigma_+^2=\sigma_S^2+\sigma_c^2,
+\end{equation}
+\begin{equation}
+  \bar l_M = l_M + \frac{\pi}{12},\qquad \Delta\phi_L = \Omega t - l_M,
+\end{equation}
+the result is again a finite Fourier series in $\Delta\phi_L$
+(\PtwoEq{A.61}, \href{\urlPtwo}{(A.62)}),
+\begin{equation}
+  H_S^2 = \frac{1}{10240}\sum_{n=0}^{4} H^2_{S;(n)},\qquad
+  H_D^2 = \frac{1}{10240}\sum_{n=0}^{8} H^2_{D;(n)},
+\end{equation}
+where $H^2_{S;(n)}$ and $H^2_{D;(n)}$ contain the $n$-th harmonic. The first two
+terms are (\PtwoEq{A.70}, \href{\urlPtwo}{(A.71)})
+\begin{align}
+  H^2_{S;(0)} &= e^{-\frac14\sigma_S^2-\frac14\sigma_c^2}
+  \left(120636\cos b_M + 7614\,e^{-2\sigma_+^2}\cos3b_M - 666\,e^{-6\sigma_+^2}\cos5b_M\right),\\
+  H^2_{S;(1)} &= \sqrt3\,e^{-\frac12\sigma_S^2}\Big[
+  -31392\Big(\cosh\tfrac{\sigma_s^2}{2}\sin b_M\cos\Delta\phi_L + \sinh\tfrac{\sigma_s^2}{2}\cos b_M\sin\Delta\phi_L\Big) \nonumber\\
+  &\qquad -32112\,e^{-2\sigma_+^2}\Big(\cosh\tfrac{3\sigma_s^2}{2}\sin3b_M\cos\Delta\phi_L + \sinh\tfrac{3\sigma_s^2}{2}\cos3b_M\sin\Delta\phi_L\Big) \nonumber\\
+  &\qquad -720\,e^{-6\sigma_+^2}\Big(\cosh\tfrac{5\sigma_s^2}{2}\sin5b_M\cos\Delta\phi_L + \sinh\tfrac{5\sigma_s^2}{2}\cos5b_M\sin\Delta\phi_L\Big)\Big].
+\end{align}
+The remaining terms (\PtwoEq{A.72}--\href{\urlPtwo}{(A.83)}) follow the same pattern:
+a damping exponential, times coefficients in $b_M$, times $\cos$ and $\sin$ of
+$n\Delta\phi_L$ (for $H_S$) or of $n\Delta\phi_L+4\bar l_M$ (for $H_D$). Finally, the
+envelopes of the two channels are (\PtwoEq{A.84}, \href{\urlPtwo}{(A.85)})
+\begin{equation}
+  \boxed{\ h^2_{A,0}(t) = \tfrac12\left(H_S^2 + H_D^2\right),\qquad
+          h^2_{E,0}(t) = \tfrac12\left(H_S^2 - H_D^2\right).\ }
+  \label{eq:AE}
+\end{equation}
+These are the squared modulation functions $M_A^2(t)$ and $M_E^2(t)$ used in \Pone.
+They describe the \emph{power} of the GF in each channel as a function of time.
+\Cref{tab:params} lists the parameters under the names used by each source.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+Meaning & Klein et al. & Pozzoli et al. & \texttt{bahamas} \\
+\midrule
+Galactic-centre latitude  & $b_M$ & $\sin\beta$ & \texttt{lat} \\
+Galactic-centre longitude & $l_M$ & $\lambda$ & \texttt{long} \\
+Variances along the axes  & $\sigma_1^2,\ \sigma_2^2$ & $\sigma_1^2,\ \sigma_2^2$ & \texttt{s1}, \texttt{s2} \\
+Orientation               & $\delta$ & $\sin\psi$ & \texttt{psi} ($=\sin2\delta$) \\
+\bottomrule
+\end{tabular}
+\caption{The five envelope parameters ($\theta_{\rm GF_{II}}$) as named in \Ptwo, in \Pone\ (which samples the latitude through its sine), and in the code.}
+\label{tab:params}
+\end{table}
+
+\noindent
+A few printed coefficients in App.~A of \Ptwo\ contain misprints; the code implements
+the corrected expressions. Details are in
+\href{https://github.com/shrikrishnaanand/bahamas_ska/blob/ska_branch/reports/PAPER_BUGS.md}{\texttt{reports/PAPER\_BUGS.md}} of the \texttt{bahamas} repository.
+
+\subsection{Step 4: average over a chunk}
+
+Inside a chunk the PSD is assumed stationary, so the modulation is replaced by its
+average over the chunk (\PoneEq{14}):
+\begin{equation}
+  \Mbar^c_j = \frac{1}{t^c_E-t^c_S}\int_{t^c_S}^{t^c_E}\dd t\ M_j^2(t\mid\theta_{\rm GF_{II}}).
+  \label{eq:mbar}
+\end{equation}
+This is a single number per chunk and per channel. Note that this is a \emph{second},
+different average. \Cref{eq:env27} averages over the gravitational-wave period of
+each binary (fast). \Cref{eq:mbar} averages the resulting slow envelope over the
+duration of a chunk (weeks).
+
+There is no need to evaluate $M_j^2(t)$ on a fine time grid and integrate it
+numerically. \Cref{eq:AE} is a finite sum of terms $\cos(n\Delta\phi_L+\varphi)$ and
+$\sin(n\Delta\phi_L+\varphi)$, and the average of each term over the chunk is
+elementary. For $n\geq1$,
+\begin{equation}
+  \frac{1}{t_E-t_S}\int_{t_S}^{t_E}\dd t\,\cos(n\Omega t+\varphi)
+  = \frac{\sin(n\Omega t_E+\varphi)-\sin(n\Omega t_S+\varphi)}{n\,\Omega\,(t_E-t_S)},
+\end{equation}
+and similarly for the sines. Replacing every harmonic by its chunk average gives
+$\Mbar^c_j$ \emph{exactly} and at negligible cost. This is what \texttt{bahamas}
+does.
+
+\begin{remark}[Why the chunk average is a reasonable approximation]
+The envelope is dominated by low harmonics of the one-year orbit, so it changes
+little over a week or two. Treating the chunk as stationary with the mean power
+$\Mbar^c_j$ discards only the variation of $M^2_j$ \emph{within} the chunk. The
+longer the chunk, the larger this error. The shorter the chunk, the fewer frequency
+bins it has. The chunk duration balances the two.
+\end{remark}
+
+%============================================================================
+\section{The total PSD of a chunk}\label{sec:psd}
+%============================================================================
+
+Combining the pieces, the PSD of channel $j$ in chunk $c$ is (\PoneEq{10})
+\begin{equation}
+  S^c_{jk}(\theta) = \Mbar^c_j(\theta_{\rm GF_{II}})\, S^{\rm GF}_k(\theta_{\rm GF_I})
+  + S^{(n)}_{jk}(\theta_n) + R_{jk}\, S^{\rm EF}_k(\theta_{\rm EF}).
+  \label{eq:psd}
+\end{equation}
+The first term is the modulated Galactic foreground: a time-independent spectral
+shape, rescaled chunk by chunk. The second is the stationary instrument noise. The
+last is an optional stationary, isotropic extragalactic foreground, projected with a
+chunk-independent response $R_{jk}$. It is only included when that component is
+studied, and we set it to zero here. The parameters are grouped as
+$\theta_{\rm GF_I}=\{\log_{10}A,\log_{10}f_{\rm knee},\log_{10}f_1,\log_{10}f_2\}$
+(spectral shape), $\theta_{\rm GF_{II}}$ (envelope, \cref{tab:params}) and
+$\theta_n=\{A_{\rm n},P\}$ (noise).
+
+%============================================================================
+\section{Simulating the data}\label{sec:data}
+%============================================================================
+
+Both the GF and the instrument noise are modelled as zero-mean Gaussian processes.
+The GF is the sum of very many independent sources, so the central limit theorem
+applies. The PSD fixes the \emph{variance} at each frequency, not the values of the
+data. A data set is one random realisation consistent with that variance.
+
+\Pone\ generates the data directly in the frequency domain. For each chunk $c$,
+channel $j$ and fine frequency $f_k$, the real and imaginary parts of the Fourier
+amplitude are drawn independently:
+\begin{equation}
+  \Re\,\tilde d^{\,c}_{jk},\ \Im\,\tilde d^{\,c}_{jk} \ \sim\ \mathcal{N}\!\left(0,\ \tfrac12 S^c_{jk}(\theta_{\rm inj})\right),
+  \label{eq:draw}
+\end{equation}
+where $\theta_{\rm inj}$ are the injected parameters. $\tilde d^{\,c}_{jk}$ is a
+\emph{circular} complex Gaussian with zero mean, and its squared modulus has
+expectation
+\begin{equation}
+  \big\langle |\tilde d^{\,c}_{jk}|^2\big\rangle
+  = \big\langle (\Re\tilde d)^2\big\rangle + \big\langle (\Im\tilde d)^2\big\rangle
+  = S^c_{jk}.
+\end{equation}
+The amplitudes themselves average to zero and carry no information. The
+information sits in their \emph{squared moduli}, whose mean is the PSD. This is
+why everything that follows works with $|\tilde d|^2$.
+
+Since each chunk is drawn independently, the chunks are independent by
+construction, and no window is needed ($W=N$ in \cref{eq:dft}). The data are
+generated once and then kept fixed for the whole inference.
+
+%============================================================================
+\section{Coarse graining: averaged periodograms}\label{sec:coarse}
+%============================================================================
+
+To reduce the cost of \cref{eq:whittle}, the $n_f$ fine frequencies of each chunk
+are grouped into $n_g\ll n_f$ \emph{logarithmically spaced} intervals. The interval
+edges are (\PoneEq{5}--\href{\urlPone}{(8)})
+\begin{align}
+  \Delta &= \frac{\log_{10}f_{\max} - \log_{10}f_{\min}}{n_g},\\
+  \log_{10} f_m &= \log_{10} f_{\min} + m\,\Delta,\\
+  \mathcal{F}_m &= \{\,k \mid f_m < f_k < f_{m+1}\,\},\\
+  n_{b_m} &= |\mathcal{F}_m|.
+\end{align}
+Here $\mathcal{F}_m$ is the set of fine frequencies that fall in the $m$-th interval,
+and $n_{b_m}$ is how many there are.\footnote{\Pone\ prints the third line as
+$\mathcal{F}_k=\{m\mid f_m<f_k<f_{m+1}\}$. The roles of $k$ and $m$ are swapped
+there; the version above is the intended one.} Within each interval, the squared
+amplitudes are replaced by their mean, the \emph{averaged periodogram}
+(\PoneEq{4}):
+\begin{equation}
+  \Pbar^{\,c}_{jm} = \frac{1}{n_{b_m}}\sum_{k\in\mathcal{F}_m} |\tilde d^{\,c}_{jk}|^2 .
+  \label{eq:phat}
+\end{equation}
+After this step each chunk and channel is described by $n_g$ numbers
+$\Pbar^{\,c}_{jm}$ instead of $n_f$ complex amplitudes. Each $\Pbar^{\,c}_{jm}$ is an
+estimate of the PSD in its interval, whose scatter shrinks as $n_{b_m}$ grows.
+
+Three practical points:
+\begin{itemize}
+  \item Because the intervals have equal \emph{logarithmic} width, they are narrow at
+        low frequency and wide at high frequency. $n_{b_m}$ is therefore not
+        $n_f/n_g$ but grows roughly in proportion to $f$: a few fine bins near
+        $f_{\min}$, hundreds at the high end. Intervals that contain no fine
+        frequency are discarded.
+  \item Averaging assumes that the PSD is nearly constant across an interval. With
+        $n_g=1000$ (\Pone) each interval is only a fraction of a percent to about a
+        percent wide in frequency, so this holds wherever the spectrum is smooth.
+  \item The model PSD is evaluated at one representative frequency per interval
+        (in \texttt{bahamas}, the midpoint between its first and last fine
+        frequency), giving $S^c_{jm}(\theta)$.
+\end{itemize}
+\Pone\ uses $f_{\min}=0.1$\,mHz and $n_g=1000$.\footnote{The paper quotes
+$f_{\max}=2.9$\,mHz. The \texttt{bahamas} template configuration uses
+$f_{\max}=0.029$\,Hz $=29$\,mHz; it is worth confirming which value was used.}
+
+%============================================================================
+\section{The Gamma likelihood}\label{sec:gamma}
+%============================================================================
+
+\subsection{Why a Gamma distribution}
+
+Each $|\tilde d_{jk}|^2$ is the sum of the squares of two independent zero-mean
+Gaussians (real and imaginary part), each with variance $S/2$. That is
+$\tfrac{S}{2}\chi^2_2$, an exponential distribution with mean $S$, which is the
+special case of the Gamma distribution with shape $1$
+(cf.\ \PtwoEq{21}). The Gamma family is closed under sums: independent Gamma
+variables with a common scale add up to a Gamma variable whose shape is the sum of
+the shapes. The averaged periodogram $\Pbar^{\,c}_{jm}$ is the mean of $n_{b_m}$
+uncorrelated squared circular Gaussians, so it is Gamma distributed. (By contrast,
+the amplitudes $\tilde d$ themselves are Gaussian, which is why
+\cref{eq:whittle} has a Gaussian form.)
+
+\Pone\ writes the single-chunk likelihood as (\PoneEq{9})
+\begin{equation}
+  \begin{split}
+  \log\mathcal{L}^{\rm chunk}_G(\Pbar^{\,c}\mid\theta) =
+  -\sum_{j\in\{A,E\}}\sum_{m=1}^{n_g}\Bigg[ &
+  \log\Gamma\!\left(\frac{n_{b_m}}{2}\right)
+  + \frac{n_{b_m}}{2}\log S^c_{jm}(\theta) \\
+  &- \left(\frac{n_{b_m}}{2}-1\right)\log\Pbar^{\,c}_{jm}
+  + \frac{n_{b_m}}{2}\frac{\Pbar^{\,c}_{jm}}{S^c_{jm}(\theta)}
+  \Bigg].
+  \end{split}
+  \label{eq:gamma}
+\end{equation}
+The two roles are worth stating clearly:
+\begin{itemize}
+  \item $\Pbar^{\,c}_{jm}$ (with a hat) is the \textbf{data}: the averaged periodogram
+        of \cref{eq:phat}, computed once from the simulated amplitudes.
+  \item $S^c_{jm}(\theta)$ is the \textbf{model}: the PSD of \cref{eq:psd} evaluated
+        at whatever $\theta$ the sampler is currently trying.
+\end{itemize}
+The injected (``true'') PSD does not appear in the likelihood at all. It was only
+used to generate the data in \cref{sec:data}. When $\theta=\theta_{\rm inj}$, the
+model coincides with it.
+
+\subsection{Comparison with the textbook Gamma likelihood}
+
+The Gamma density with shape $k>0$ and scale $\vartheta>0$ is
+(\href{https://www.itl.nist.gov/div898/handbook/eda/section3/eda366b.htm}{NIST/SEMATECH
+e-Handbook, Sec.~1.3.6.6.11}; Casella \& Berger, \emph{Statistical Inference},
+Sec.~3.3)
+\begin{equation}
+  p(x\mid k,\vartheta) = \frac{x^{k-1}\,e^{-x/\vartheta}}{\Gamma(k)\,\vartheta^{k}},
+  \qquad \langle x\rangle = k\vartheta,\qquad \mathrm{Var}(x) = k\vartheta^2 .
+\end{equation}
+For $n$ independent samples with the \emph{same} $k$ and $\vartheta$, the
+log-likelihood is
+\begin{equation}
+  \ell(k,\vartheta) = (k-1)\sum_{i=1}^{n}\log x_i - \frac{1}{\vartheta}\sum_{i=1}^{n} x_i
+  - n\log\Gamma(k) - n k\log\vartheta .
+  \label{eq:gamma_generic}
+\end{equation}
+In \cref{eq:gamma}, every pair $(j,m)$ is a \emph{single} observation with its own
+shape and scale. The sum over channels and bins plays the role of the sum over
+samples in \cref{eq:gamma_generic}, with $n=1$ for each term. Writing one term of
+\cref{eq:gamma_generic} with the overall minus sign of \cref{eq:gamma} pulled out:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Textbook, one sample & Eq.~(\ref{eq:gamma}), one $(j,m)$ & Identification \\
+\midrule
+$x$ & $\Pbar^{\,c}_{jm}$ & the data \\
+$(k-1)\log x$ & $+\left(\frac{n_{b_m}}{2}-1\right)\log\Pbar$ & shape $k = n_{b_m}/2$ \\
+$-\log\Gamma(k)$ & $-\log\Gamma\!\left(\frac{n_{b_m}}{2}\right)$ & same $k$ \\
+$-x/\vartheta$ & $-\frac{n_{b_m}}{2}\,\Pbar/S$ & scale $\vartheta = 2S/n_{b_m}$ \\
+$-k\log\vartheta$ & $-\frac{n_{b_m}}{2}\log S$ & $=-k\log\vartheta$ up to $-\frac{n_{b_m}}{2}\log\frac{2}{n_{b_m}}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The last entry differs only by a term that depends on $n_{b_m}$ alone. That
+term does not depend on $\theta$, so \Pone\ drops it. In summary,
+\begin{equation}
+  \Pbar^{\,c}_{jm} \sim \mathrm{Gamma}\!\left(k = \frac{n_{b_m}}{2},\ \ \vartheta = \frac{2 S^c_{jm}(\theta)}{n_{b_m}}\right),
+  \qquad \langle\Pbar\rangle = k\vartheta = S^c_{jm}(\theta).
+\end{equation}
+
+\paragraph{Interpretation.}
+\begin{itemize}
+  \item \emph{The model PSD is the mean, and it sets the scale.} $S$ is not the
+        scale parameter itself but the mean $k\vartheta$. Since
+        $\vartheta = 2S/n_{b_m}$ is proportional to $S$, changing $S$ at fixed
+        $n_{b_m}$ simply stretches the distribution of $\Pbar$ without changing its
+        shape.
+  \item \emph{The number of averaged bins sets the shape.} The relative scatter is
+        $\sqrt{\mathrm{Var}}/\langle\Pbar\rangle = 1/\sqrt{k}$. For small $n_{b_m}$
+        the distribution is skewed (an exponential for $k=1$). For large $n_{b_m}$ it
+        approaches a narrow Gaussian centred on $S$. High-frequency intervals, which
+        average many bins, therefore constrain the model more tightly.
+  \item \emph{What the sampler sees.} Only two terms depend on $\theta$:
+        \begin{equation}
+          \log\mathcal{L}^{\rm chunk}_G = -\sum_{j,m}\frac{n_{b_m}}{2}
+          \left[\log S^c_{jm}(\theta) + \frac{\Pbar^{\,c}_{jm}}{S^c_{jm}(\theta)}\right] + \text{const}.
+        \end{equation}
+        Each bracket is minimised at $S=\Pbar$, and each is weighted by $n_{b_m}$.
+        For $n_{b_m}=1$ this reduces to the $\theta$-dependent part of the Whittle
+        likelihood, \cref{eq:whittle}. So the Gamma likelihood is the natural
+        generalisation of Whittle to averaged periodograms.
+\end{itemize}
+
+\begin{remark}[Remark: counting degrees of freedom]
+A complex Fourier amplitude carries \emph{two} real Gaussian degrees of freedom, so
+each $|\tilde d_{jk}|^2$ is Gamma with shape $1$ (as in \PtwoEq{21}). The mean of
+$n_{b_m}$ of them is therefore Gamma with shape $n_{b_m}$ and scale $S/n_{b_m}$,
+with variance $S^2/n_{b_m}$. \Cref{eq:gamma} instead uses shape $n_{b_m}/2$, which
+corresponds to variance $2S^2/n_{b_m}$. The $\theta$-dependent part of
+\cref{eq:gamma} is then exactly one half of the exact one:
+\[
+  \mathcal{L}_{\rm Eq.\,(9)}(\theta) \propto \mathcal{L}_{\rm exact}(\theta)^{1/2}.
+\]
+This is equivalent to tempering the likelihood with inverse temperature $1/2$. The
+location of the posterior is unchanged, but its widths are inflated by about
+$\sqrt2$. The Whittle likelihood of \cref{eq:whittle} carries the same factor
+$\tfrac12$ per complex amplitude, so the two likelihoods remain consistent with each
+other. Doubling $n_{b_m}$ in \cref{eq:gamma}, and dropping the $\tfrac12$ in
+\cref{eq:whittle}, gives the exact versions. We flag this as a point to discuss with
+the authors.
+\end{remark}
+
+%============================================================================
+\section{Inference}\label{sec:inference}
+%============================================================================
+
+Putting \cref{eq:total} and \cref{eq:gamma} together gives
+$\log\mathcal{L}(\boldsymbol{\Pbar}\mid\theta)$. Bayes' theorem then gives the
+posterior
+$p(\theta\mid\boldsymbol{\Pbar}) \propto \mathcal{L}(\boldsymbol{\Pbar}\mid\theta)\,\pi(\theta)$.
+In \Pone\ the parameter vector has 14 components: 4 for the GF spectrum
+($\theta_{\rm GF_I}$), 5 for the envelope ($\theta_{\rm GF_{II}}$), 3 for the
+extragalactic foreground ($\theta_{\rm EF}$), and the two noise amplitudes
+$A_{\rm n}$ and $P$. All have uniform priors. Without the extragalactic foreground
+there are 11.
+
+At every step the sampler proposes a trial $\theta$, and only the model branch of
+\cref{fig:flow} is recomputed: $\Mbar^c_j(\theta)$ for every chunk, the spectra at
+the coarse frequencies, and the model PSD $S^c_{jm}(\theta)$. The data
+$\Pbar^{\,c}_{jm}$ never change. Because every ingredient is analytic (the envelope
+of \cref{eq:AE}, its chunk average and the spectra), the whole chain from $\theta$
+to $\log\mathcal{L}$ is cheap and differentiable. Two kinds of sampler are used:
+\begin{itemize}
+  \item \textbf{Hamiltonian Monte Carlo} with the No-U-Turn Sampler (NUTS,
+        \href{https://arxiv.org/abs/1111.4246}{Hoffman \& Gelman 2014}), as
+        implemented in \href{https://arxiv.org/abs/1912.11554}{NumPyro}. HMC moves
+        through parameter space along trajectories guided by the gradient
+        $\nabla_\theta\log p(\theta\mid\boldsymbol{\Pbar})$, which is obtained by
+        automatic (reverse-mode) differentiation in \texttt{jax}. No gradient has to
+        be derived by hand. This makes HMC efficient even with many correlated
+        parameters.
+  \item \textbf{Nested sampling} with
+        \href{https://arxiv.org/abs/2102.11056}{\texttt{nessai}}, which uses
+        normalising flows to propose new live points. Nested sampling is not an MCMC
+        method. It explores the prior volume shell by shell and returns the Bayesian
+        evidence $\mathcal{Z}=\int\mathcal{L}\,\pi\,\dd\theta$ together with the
+        posterior. The evidence is what allows the modulated (quasi-stationary) model
+        to be compared with a stationary one, in which $\Mbar^c_j$ is constant, via
+        their Bayes factor.
+\end{itemize}
+\Pone\ finds the same posteriors with both samplers and with both likelihoods
+(Whittle and Gamma).
+
+%============================================================================
+\section{Summary}
+%============================================================================
+
+\begin{keybox}[The chunked pipeline in nine steps]
+\begin{enumerate}
+  \item Split the observation into $N_c$ chunks $[t^c_S,t^c_E]$ of duration $T$;
+        each has the frequency grid $f_k=k/T$.
+  \item Evaluate the stationary spectra $S^{\rm GF}(f_k)$ and $S^{(n)}_j(f_k)$
+        (Eqs.~\ref{eq:sgf}--\ref{eq:oms}); they are the same for every chunk.
+  \item For each chunk and channel, compute the chunk-averaged modulation
+        $\Mbar^c_j$ (\cref{eq:mbar}) analytically from the sky-integrated envelope
+        (\cref{eq:AE}).
+  \item Form the total PSD $S^c_{jk}=\Mbar^c_jS^{\rm GF}_k+S^{(n)}_{jk}$ (\cref{eq:psd}).
+  \item Draw $\Re\tilde d^{\,c}_{jk}$ and $\Im\tilde d^{\,c}_{jk}$ independently from
+        $\mathcal{N}(0,S^c_{jk}/2)$ with the injected parameters (\cref{eq:draw}).
+  \item Group the fine frequencies into $n_g$ log-spaced intervals, average
+        $|\tilde d^{\,c}_{jk}|^2$ in each, and keep $\Pbar^{\,c}_{jm}$ and
+        $n_{b_m}$ (\cref{eq:phat}).
+  \item For a trial $\theta$, recompute $\Mbar^c_j(\theta)$ and $S^c_{jm}(\theta)$ at
+        the coarse frequencies.
+  \item Evaluate the Gamma likelihood (\cref{eq:gamma}) and sum it over chunks
+        (\cref{eq:total}).
+  \item Let the sampler (NUTS or nessai) propose the next $\theta$ and return to
+        step~7.
+\end{enumerate}
+Steps 1--6 are done once. Steps 7--9 are repeated until the posterior is sampled.
+\end{keybox}
+
+%============================================================================
+\section*{References}
+%============================================================================
+\begin{itemize}\sloppy
+  \item R.~Buscicchio, F.~Pozzoli, D.~Chirico, A.~Sesana, \emph{The first year of LISA
+        Galactic foreground},
+        \href{https://arxiv.org/abs/2511.03604}{arXiv:2511.03604}.
+  \item R.~Buscicchio, A.~Klein, V.~Korol, F.~Di~Renzo, C.~J.~Moore, D.~Gerosa,
+        A.~Carzaniga, \emph{Test for LISA foreground Gaussianity and stationarity:
+        galactic white-dwarf binaries}, Eur.\ Phys.\ J.\ C \textbf{85}, 887 (2025),
+        \href{https://arxiv.org/abs/2410.08263}{arXiv:2410.08263}.
+  \item N.~Karnesis, S.~Babak, M.~Pieroni, N.~Cornish, T.~Littenberg,
+        \emph{Characterization of the stochastic signal originating from compact
+        binaries populations as measured by LISA}, Phys.\ Rev.\ D \textbf{104},
+        043019 (2021), \href{https://arxiv.org/abs/2103.14598}{arXiv:2103.14598}.
+  \item G.~Casella, R.~L.~Berger, \emph{Statistical Inference}, 2nd ed., Duxbury (2002),
+        Sec.~3.3.
+  \item NIST/SEMATECH e-Handbook of Statistical Methods,
+        \href{https://www.itl.nist.gov/div898/handbook/eda/section3/eda366b.htm}{Gamma distribution}.
+  \item M.~D.~Hoffman, A.~Gelman, \emph{The No-U-Turn Sampler}, JMLR \textbf{15}, 1593
+        (2014), \href{https://arxiv.org/abs/1111.4246}{arXiv:1111.4246}.
+  \item D.~Phan, N.~Pradhan, M.~Jankowiak, \emph{Composable effects for flexible and
+        accelerated probabilistic programming in NumPyro},
+        \href{https://arxiv.org/abs/1912.11554}{arXiv:1912.11554}.
+  \item M.~J.~Williams, J.~Veitch, C.~Messenger, \emph{Nested sampling with normalizing
+        flows for gravitational-wave inference}, Phys.\ Rev.\ D \textbf{103}, 103006
+        (2021), \href{https://arxiv.org/abs/2102.11056}{arXiv:2102.11056}.
+\end{itemize}
+
+\end{document}
