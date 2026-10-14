@@ -5,6 +5,7 @@
 | [WAVELET_README.md](WAVELET_README.md) | The wavelet-domain (WDM) pipeline: the math end to end (transform, modulation atoms, Gamma likelihood and its equivalence with Eq. 9 of arXiv:2511.03604, RJMCMC), code, validation, configs |
 | [WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md) | Run 1: injecting the best-fit wavelet modulation (30 d) and recovering it with RJMCMC (done Oct 11) |
 | [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md) | Run 2: one 30-day series with the true sky envelope, analysed with the wavelet RJMCMC and with the OG chunked model (done Oct 11) |
+| [GF_TIME_FREQUENCY_NOTE.pdf](GF_TIME_FREQUENCY_NOTE.pdf) ([.tex](GF_TIME_FREQUENCY_NOTE.tex)) | Step-by-step guide for a master student: Part I the chunked Fourier analysis (Pozzoli et al.), Part II the wavelet (WDM) analysis: transform, atoms, pixel statistics, grouping, Gamma proof, equivalence with Eq. 9 and its dof error, RJMCMC, gaps |
 | [PAPER_BUGS.md](PAPER_BUGS.md) | The Galactic envelope (`envelopes_gaussian`, `average_envelopes_gaussian`) checked term by term against Buscicchio et al. 2024: two code errors (fixed Oct 12), three misprints in the paper where the code is right, conventions |
 
 Code and notebooks: [data/wavelet_injection/](../data/wavelet_injection/) (see its README).

@@ -632,6 +632,40 @@ Tests: [tests/test_wdm.py](../tests/test_wdm.py), [tests/test_wavelet_model.py](
 | eryn's batched interface gives the same values as single-walker evaluation | [test_eryn_vectorised_interface](../tests/test_wavelet_model.py#L219) |
 | A short NUTS run brackets the injected values | [test_nuts_recovers_amplitude](../tests/test_wavelet_model.py#L249) |
 
+**Independence of pixels (the diagonal approximation)**
+
+The tests above check each pixel on its own (mean and variance of $w^2/\sigma^2$). The Gamma likelihood also needs the
+$\nu_g$ pixels of a group to be **independent**: only then is $`Y_{c,sg} \sim \mathrm{Gamma}(\nu_g/2,\thickspace 2\sigma^2_{c,sg})`$,
+which has
+
+```math
+\nu_g\thinspace\mathrm{Var}\left(\frac{Y_{c,sg}}{\mathbb E\thinspace Y_{c,sg}}\right) = 2 .
+```
+
+Correlated neighbours would give more than 2, i.e. fewer effective degrees of freedom than $\nu_g$, and posteriors that
+are too narrow. [data/wavelet_injection/dof_check.py](../data/wavelet_injection/dof_check.py) measures this on 100
+fresh realisations of the run-1 injection (30 d, $N_f$ = 3600, TDI gen 1, `edge_bins` = 2, `time_bin` = 2,
+`freq_bins` = 200, i.e. 174 frequency groups with $\nu_g$ = 2 to 116). The injected modulation is made of wavelet
+atoms, so $\mathbb E\thinspace Y = \nu_g\sigma^2$ at the injection is exact and only the correlations are tested. It also
+measures the correlation of whitened pixels $w/\sigma$ with their neighbour in frequency $(n, m+1)$ and in time
+$(n+1, m)$.
+
+| band | groups | median $\nu_g$ | mean of $Y/\mathbb E\thinspace Y$ (expect 1) | $\nu_g\thinspace\mathrm{Var}(Y/\mathbb E\thinspace Y)$ (expect 2) | neighbour correlation, frequency / time |
+|---|---|---|---|---|---|
+| 0.1–0.3 mHz | 14 | 2 | 1.005 | 2.010 ± 0.024 | +0.003 / +0.001 |
+| 0.3–1 mHz | 39 | 2 | 1.002 | 1.997 ± 0.010 | −0.002 / −0.003 |
+| 1–3 mHz | 39 | 6 | 1.002 | 2.007 ± 0.009 | +0.000 / −0.000 |
+| 3–10 mHz | 44 | 22 | 1.000 | 1.999 ± 0.006 | +0.000 / −0.000 |
+| 10–29 mHz | 38 | 69 | 1.001 | 2.006 ± 0.007 | +0.000 / +0.000 |
+| all | 174 | | 1.0015 | 2.003 | |
+
+The effective number of degrees of freedom equals $\nu_g$ to 1% in every band, including the lowest frequencies, where
+the spectrum is steepest and leakage between neighbours would show first. The largest single-pixel correlation is
+0.03, about $3\sigma$ of the statistical error (0.009) over thousands of pixels, as expected from noise. So the shape
+$\nu_g/2$ of the Gamma likelihood is right and the wavelet posteriors are not too narrow. Scope: data simulated from
+the same model as the likelihood (no gaps or glitches), A and E independent by construction, and this configuration
+only.
+
 **Reversible jump**
 
 | Check | Test |
@@ -719,8 +753,9 @@ Measured on a laptop CPU (WSL):
 3. **Atom centres are confined to the data span** ($u_k \in [0, 1]$). Run 1 suggests extending this, since the data
    would like an atom at or before the start.
 4. **Diagonal likelihood.** WDM coefficients are treated as independent and the variance as constant within a group.
-   This is standard for locally stationary noise and supported by the whitening test, but correlations between
-   neighbouring pixels are neglected.
+   This is standard for locally stationary noise. For the injection-run settings it is checked directly: neighbouring
+   pixels are uncorrelated and the effective degrees of freedom of each group equal $\nu_g$ to 1%
+   ([Section 9](#9-validation)). Other grids, or real data with gaps and glitches, would need the same check.
 5. **Spectral shape in the quick config.** Its band lies below the galaxy's knee, so `alpha`, `fknee`, `fr1` and
    `fr2` are unconstrained there and NUTS takes very deep trees. Fix them (no `bounds`) for quick runs.
 6. **The wavelet pipeline needs the JAX backend.** With `--use_jax False` it stops with a clear error.

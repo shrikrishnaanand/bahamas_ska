@@ -26,12 +26,16 @@ injection.py                 simulation (one series for both pipelines), wavelet
 og.py                        OG pipeline on the saved series: chunk FFTs, binning, nessai
                              script: python og.py --tag run2 [--dof-factor 2]   (run from a terminal, not a notebook)
 data_checks.py               input checks over 10 noise realisations (OG leakage vs taper, WDM edge pixels)
+dof_check.py                 WDM pixel independence over 100 realisations: nu * Var(Y / E[Y]) = 2 per group,
+                             neighbour correlations (-> outputs/checks/dof_check.npz)
+likelihood_grid.py           time-frequency map of data/model per pixel and per likelihood group, galactic fraction,
+                             and the effect of a 1-day gap (-> outputs/checks/likelihood_grid.png)
 diagnostics.py               convergence of a wavelet run: autocorrelation times, ESS, stuck walkers
 run1_inject_recover.ipynb    run 1 analysis (loads outputs/run1)
 run2_sky_vs_og.ipynb         run 2 analysis and the OG comparison (loads outputs/run2)
 outputs/
   reference/                 atoms.npz, fit.png
-  checks/                    data_checks.png, data_checks.npz
+  checks/                    data_checks.png, data_checks.npz, dof_check.npz, likelihood_grid.png
   run1/                      timeseries.npz, data.h5, chains.npz, run.log, injection.png, data_spectrogram.png,
                              convergence.png, K_posterior.png, corner_psd.png, atoms.png, modulation_recovery.png,
                              k_trace.npz (K of all 128 walkers per step, burn-in included), K_trace_burnin.png,
