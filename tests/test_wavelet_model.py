@@ -163,6 +163,32 @@ def test_time_binning(year_data):
     assert abs(grid[int(jnp.argmax(profile))] - x0[names.index('amp')]) < 0.03
 
 
+def test_time_mask(year_data):
+    """A gap mask drops whole time pixels: kept blocks sum only their kept pixels, with nu reduced accordingly."""
+    full = WaveletLikelihood(year_data, F1, F2, freq_bins=10, edge_bins=4, time_bin=2)
+    keep = np.ones(year_data.Nt, bool)
+    assert np.array_equal(WaveletLikelihood(year_data, F1, F2, freq_bins=10, edge_bins=4, time_bin=2,
+                                            time_mask=keep).Y, full.Y)
+    keep[100:103] = False                  # analysed pixels 96..98: block 48 loses both, block 49 one pixel
+    gap = WaveletLikelihood(year_data, F1, F2, freq_bins=10, edge_bins=4, time_bin=2, time_mask=keep)
+    assert len(gap.times) == len(full.times) - 1
+    blocks = np.delete(np.arange(len(full.times)), 48)
+    assert np.allclose(np.asarray(gap.nu_sg)[:, 0] / float(full.nu[0]), np.where(blocks == 49, 0.5, 1.0))
+    t = year_data.times
+    assert np.isclose(float(gap.times[48]), t[103])          # block 49 keeps only time pixel 103
+    w = year_data.w[:, 103][:, gap.pixels] ** 2
+    assert np.allclose(np.asarray(gap.Y)[:, 48], np.add.reduceat(w, np.flatnonzero(np.diff(np.append(-1, gap.group_ids))), axis=1))
+
+    # The masked pixels do not enter the likelihood at all
+    data2 = WaveletData(np.array(year_data.w, copy=True), year_data.dt, year_data.nx, year_data.channels,
+                        year_data.t0)
+    data2.w[:, 100:103] = 0.0
+    gap2 = WaveletLikelihood(data2, F1, F2, freq_bins=10, edge_bins=4, time_bin=2, time_mask=keep)
+    S = jnp.ones((2, gap.ngroups)) * 1e-3
+    P = jnp.ones((2, len(gap.times)))
+    assert float(gap.log_likelihood(S[0], S, P)) == float(gap2.log_likelihood(S[0], S, P))
+
+
 def test_invalid_variance_gives_minus_infinity(year_data):
     like = WaveletLikelihood(year_data, F1, F2, freq_bins=10)
     S = jnp.ones((2, like.ngroups))

@@ -8,6 +8,7 @@ no external data or posteriors are used.
 |---|---|---|---|---|---|
 | run 1 | best-fit wavelet atoms of the true envelope (`fit_reference.py`; A: 2, E: 1) | can the RJMCMC recover a modulation the model represents exactly? | **done** (redone Oct 16, fixed code) | [run1_inject_recover.ipynb](run1_inject_recover.ipynb) | [WAVELET_INJECTION_RUN1.md](../../reports/WAVELET_INJECTION_RUN1.md) |
 | run 2 | true sky envelope $M_c^2(t)$, true amplitude | wavelet vs OG on the same data: which posterior on $P_c(t)$ is broader? | **done** (redone Oct 16, fixed code) | [run2_sky_vs_og.ipynb](run2_sky_vs_og.ipynb) | [WAVELET_INJECTION_RUN2.md](../../reports/WAVELET_INJECTION_RUN2.md) |
+| run 3 | run 2's series with a 1-day gap (12–13 d) | wavelet with the gap pixels left out vs wavelet without the gap | **done** (Oct 16) | [run3_gap.ipynb](run3_gap.ipynb) | [WAVELET_INJECTION_RUN3.md](../../reports/WAVELET_INJECTION_RUN3.md) |
 
 Settings (both runs): sin ψ = −0.83 (paper 2); 30.00 d at Δt = 10 s, TDI gen 1, seed 2026, simulated with 2 extra
 days at each end and cut (non-periodic ends). Wavelet: $N_f$ = 3600 (72 pixels of 10 h), 2 edge pixels dropped at each
@@ -21,6 +22,7 @@ config/og_config.yaml        OG chunked-pipeline settings (chunks, taper, binnin
 fit_reference.py             wavelet fit of the true envelope -> outputs/reference/ (atoms.npz = run-1 injection, fit.png)
 injection.py                 simulation (one series for both pipelines), wavelet posterior and sampler, run()
                              script: python injection.py --tag run1 --injection wavelet [--rerun-data]
+                                     python injection.py --tag run3 --injection sky --gap 12 13 [--gap-buffer 1]
                                      python injection.py --tag run2 --injection sky
                                      python injection.py --tag run1 --injection wavelet --k-trace
                                        (rerun with the burn-in stored -> k_trace.npz; chains.npz untouched)
@@ -29,11 +31,14 @@ og.py                        OG pipeline on the saved series: chunk FFTs, binnin
 data_checks.py               input checks over 10 noise realisations (OG leakage vs taper, WDM edge pixels)
 dof_check.py                 WDM pixel independence over 100 realisations: nu * Var(Y / E[Y]) = 2 per group,
                              neighbour correlations (-> outputs/checks/dof_check.npz)
+gap_check.py                 which WDM pixels a data gap biases (20 realisations) and which the likelihood leaves out
+                             (-> outputs/checks/gap_check.png, gap_likelihood_mask.png)
 likelihood_grid.py           time-frequency map of data/model per pixel and per likelihood group, galactic fraction,
                              and the effect of a 1-day gap (-> outputs/checks/likelihood_grid.png)
 diagnostics.py               convergence of a wavelet run: autocorrelation times, ESS, stuck walkers
 run1_inject_recover.ipynb    run 1 analysis (loads outputs/run1)
 run2_sky_vs_og.ipynb         run 2 analysis and the OG comparison (loads outputs/run2)
+run3_gap.ipynb               run 3 analysis: the gap, and the comparison with run 2's wavelet run (loads outputs/run2, run3)
 outputs/
   reference/                 atoms.npz, fit.png
   checks/                    data_checks.png, data_checks.npz, dof_check.npz, likelihood_grid.png
@@ -48,6 +53,9 @@ outputs/
                              corner_spectral_og_vs_wavelet.png, og_sky_corner.png
     og/                      OG run, correct Gamma dof (bahamas default): data.h5, data_bin.h5, result.hdf5, nessai plots
     og_legacy/               OG run with the paper's Gamma dof (Pozzoli et al. Eq. 9; --legacy-dof)
+  run3/                      timeseries.npz (run 2's series with the gap zeroed), data.h5, chains.npz, run.log, k_trace.npz,
+                             data_gap_mask.png, K_trace_burnin.png, corner_gap_vs_nogap.png, modulation_gap_vs_nogap.png,
+                             shape_gap_vs_nogap.png
 ```
 
 `chains.npz` files are about 95 MB each (atoms of every walker and step); they are not meant for git.

@@ -4,6 +4,7 @@
 |---|---|
 | [WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md) | Run 1: injecting the best-fit wavelet modulation (30 d) and recovering it with RJMCMC (redone Oct 16 with the fixed code) |
 | [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md) | Run 2: one 30-day series with the true sky envelope, analysed with the wavelet RJMCMC and with the OG chunked model (redone Oct 16 with the fixed code) |
+| [WAVELET_INJECTION_RUN3.md](WAVELET_INJECTION_RUN3.md) | Run 3: run 2's series with a 1-day gap, wavelet RJMCMC with the gap pixels left out of the likelihood, compared with run 2 (Oct 16) |
 | [GF_TIME_FREQUENCY_NOTE.pdf](GF_TIME_FREQUENCY_NOTE.pdf) ([.tex](GF_TIME_FREQUENCY_NOTE.tex)) | Step-by-step guide for a master student: Part I the chunked Fourier analysis (Pozzoli et al.), Part II the wavelet (WDM) analysis: transform, atoms, pixel statistics, grouping, Gamma proof, equivalence with Eq. 9 and its dof error, RJMCMC, gaps |
 | [PAPER_BUGS.md](PAPER_BUGS.md) | bahamas checked against Klein et al. and Pozzoli et al.: envelope errors F1–F2 and code bugs B1–B7 (all fixed, with status and checks), misprints in the papers, open questions, conventions |
 

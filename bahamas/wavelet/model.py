@@ -23,6 +23,14 @@ the wavelet analogue of the coarse-grained Gamma likelihood of the chunked
 pipeline. With one pixel per group this is exactly the Gaussian likelihood
 up to a data-only constant.
 
+Data gaps: ``time_mask`` removes whole time pixels (all frequencies) from the
+likelihood, e.g. the pixels that overlap a gap and their biased neighbours. A
+block of ``time_bin`` pixels keeps the sum over its remaining pixels, with
+``nu = (kept pixels) x (frequency pixels of the group)`` degrees of freedom and
+the modulation evaluated at the mean time of its kept pixels; a block with no
+pixel left is dropped. Removed pixels are left out, not set to zero: a zero in
+the Gamma likelihood would be a measured power of zero.
+
 Everything evaluated during sampling is a pure ``jax.numpy`` function, so it
 can be jit-compiled, vectorised over walkers with ``vmap`` and differentiated
 (for NUTS).
@@ -161,9 +169,17 @@ class WaveletLikelihood:
         time_bin (int): Number of consecutive time pixels summed into one group
             (the modulation is evaluated at the group's mean time). Use it when
             the modulation is slow compared with ``time_bin * Nf * dt``.
+        time_mask (array of bool, optional): Shape (Nt,), ``False`` for time
+            pixels to leave out of the likelihood (data gaps). The block
+            structure is that of the unmasked data; ``nu`` is reduced per block.
+
+    Attributes of note: ``nu`` (ngroups,) are the degrees of freedom of a full
+    block, ``nu_sg`` (ntimes, ngroups) those of each kept block; ``times`` are
+    the kept blocks' (mean kept-pixel) times; ``time_index`` are the analysed
+    time pixels before masking and ``time_keep`` which of them are kept.
     """
 
-    def __init__(self, data, f1, f2, freq_bins=None, edge_bins=4, nsub=8, time_bin=1):
+    def __init__(self, data, f1, f2, freq_bins=None, edge_bins=4, nsub=8, time_bin=1, time_mask=None):
         self.data = data
         self.dt = data.dt
         time_bin = int(time_bin)
@@ -175,7 +191,17 @@ class WaveletLikelihood:
         time_index = time_index[:ntimes * time_bin]
         self.time_index = time_index
         self.time_bin = time_bin
-        self.times = jnp.asarray(data.times[time_index].reshape(ntimes, time_bin).mean(axis=1))
+        keep = np.ones(data.Nt, bool) if time_mask is None else np.asarray(time_mask, bool)
+        if keep.shape != (data.Nt,):
+            raise ValueError(f"time_mask must have shape ({data.Nt},), got {keep.shape}")
+        keep_blk = keep[time_index].reshape(ntimes, time_bin)
+        kept_per_block = keep_blk.sum(axis=1)
+        blocks = kept_per_block > 0                       # blocks with at least one kept pixel
+        if not blocks.any():
+            raise ValueError("time_mask leaves no time pixels")
+        self.time_keep = keep[time_index]
+        t_blk = data.times[time_index].reshape(ntimes, time_bin)
+        self.times = jnp.asarray((t_blk * keep_blk).sum(axis=1)[blocks] / kept_per_block[blocks])
 
         freqs = data.freqs
         pixels, starts = frequency_groups(freqs, f1, f2, freq_bins)
@@ -184,9 +210,11 @@ class WaveletLikelihood:
         counts = np.diff(np.append(starts, len(pixels))).astype(float)
         self.ngroups = len(counts)
         self._counts = jnp.asarray(counts)
-        # Degrees of freedom of each (time, frequency) group
+        # Degrees of freedom of each (time, frequency) group: a full block has counts * time_bin
         nu = counts * time_bin
         self.nu = jnp.asarray(nu)
+        nu_sg = kept_per_block[blocks][:, None] * counts[None, :]
+        self.nu_sg = jnp.asarray(nu_sg)
         self.group_freqs = np.add.reduceat(freqs[pixels], starts) / counts
         self.group_ids = jnp.asarray(np.repeat(np.arange(self.ngroups), counts.astype(int)))
 
@@ -198,14 +226,15 @@ class WaveletLikelihood:
 
         # Sufficient statistics Y[c, n, g] = sum over the group of w^2
         w = data.w[:, time_index][:, :, pixels]
-        Y = np.add.reduceat(w ** 2, starts, axis=2)
-        Y = Y.reshape(Y.shape[0], ntimes, time_bin, -1).sum(axis=2)
+        w2 = w ** 2 if time_mask is None else w ** 2 * self.time_keep[None, :, None]
+        Y = np.add.reduceat(w2, starts, axis=2)
+        Y = Y.reshape(Y.shape[0], ntimes, time_bin, -1).sum(axis=2)[:, blocks]
         self.Y = jnp.asarray(Y)
 
         # Data-only part of the Gamma log-density, kept so the value is a proper likelihood
-        nu_b = nu[None, None, :]
+        nu_b = nu_sg[None, :, :]
         self._const = float(np.sum((nu_b / 2 - 1) * np.log(Y) - (nu_b / 2) * np.log(2.0) - gammaln(nu_b / 2)))
-        self.npixels = int(self.npix * len(time_index) * len(data.channels))
+        self.npixels = int(self.npix * self.time_keep.sum() * len(data.channels))
 
     def band_average(self, psd_values):
         """
@@ -240,7 +269,7 @@ class WaveletLikelihood:
         var = (P[:, :, None] * S_gal[:, None, :] + S_noise[:, None, :]) / (2 * self.dt)
         ok = jnp.all(var > 0) & jnp.all(jnp.isfinite(var))
         safe = jnp.where(ok, var, 1.0)
-        value = self._const - jnp.sum(self.nu * jnp.log(safe) / 2 + self.Y / (2 * safe))
+        value = self._const - jnp.sum(self.nu_sg * jnp.log(safe) / 2 + self.Y / (2 * safe))
         return jnp.where(ok, value, -jnp.inf)
 
 

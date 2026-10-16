@@ -18,6 +18,11 @@ Both runs are analysed with the same wavelet model and priors. Used by the noteb
 
     python injection.py --tag run1 --injection wavelet
     python injection.py --tag run2 --injection sky
+    python injection.py --tag run3 --injection sky --gap 12 13      (run 2's series with a 1-day gap)
+
+A gap (``config['gap']``: ``days`` = [start, end], ``buffer_pixels``) zeroes the series in [start, end) and removes
+from the likelihood every time pixel that overlaps it plus ``buffer_pixels`` on each side, whose WDM coefficients the
+gap edges bias (``gap_check.py``: ~10% one pixel away, <~2% two pixels away).
 """
 import os
 import time
@@ -57,6 +62,38 @@ CONFIG = {
                   'atom_step': 0.02, 'nwalkers': 32, 'ntemps': 4, 'nsteps': 6000, 'burnin': 2000,
                   'seed': 1},
 }
+
+
+def with_gap(gap_days, buffer_pixels=1, config=CONFIG):
+    """``config`` with a data gap of ``gap_days`` = (start, end) in days."""
+    cfg = copy.deepcopy(config)
+    cfg['gap'] = {'days': [float(gap_days[0]), float(gap_days[1])], 'buffer_pixels': int(buffer_pixels)}
+    return cfg
+
+
+def apply_gap(x, config=CONFIG):
+    """Zero the series x (channels, N) inside the gap of ``config`` (if any)."""
+    if 'gap' not in config:
+        return x
+    g0, g1 = (d * DAY for d in config['gap']['days'])
+    t = config['t0'] + np.arange(x.shape[1]) * config['dt']
+    x = np.array(x, copy=True)
+    x[:, (t >= g0) & (t < g1)] = 0.0
+    return x
+
+
+def gap_time_mask(data, config=CONFIG):
+    """``WaveletLikelihood`` time mask: False for the pixels overlapping the gap and ``buffer_pixels`` on each side."""
+    if 'gap' not in config:
+        return None
+    g0, g1 = (d * DAY for d in config['gap']['days'])
+    dT = data.Nf * data.dt
+    t = data.times
+    hit = np.flatnonzero((t + dT / 2 > g0) & (t - dT / 2 < g1))
+    b = config['gap']['buffer_pixels']
+    keep = np.ones(data.Nt, bool)
+    keep[max(hit[0] - b, 0):min(hit[-1] + b + 1, data.Nt)] = False
+    return keep
 
 
 def load_reference(path=REFERENCE):
@@ -159,7 +196,7 @@ def simulate_series(kind, config=CONFIG, seed=None):
     pad = int(round(config['pad_days'] * DAY / dt))
     x = simulate_channels(src, N + 2 * pad, dt, wcfg['channels'], config['gen2'], t0=config['t0'] - pad * dt,
                           seed=wcfg['seed'] if seed is None else seed, modulation=modulation)[:, pad:pad + N]
-    return np.asarray(x), inj
+    return apply_gap(np.asarray(x), config), inj
 
 
 def to_wavelet(x, inj, config=CONFIG):
@@ -201,7 +238,8 @@ def build_posterior(data, config=CONFIG):
     ref = load_reference()
     wcfg, icfg = config['wavelet'], config['inference']
     like = WaveletLikelihood(data, config['f1'], config['f2'], freq_bins=wcfg['freq_bins'],
-                             edge_bins=wcfg['edge_bins'], nsub=wcfg['band_samples'], time_bin=wcfg['time_bin'])
+                             edge_bins=wcfg['edge_bins'], nsub=wcfg['band_samples'], time_bin=wcfg['time_bin'],
+                             time_mask=gap_time_mask(data, config))
     post = WaveletPosterior(like, inference_sources(ref), modulation='wavelets', gen2=config['gen2'],
                             wavelet_shape=icfg['wavelet_shape'], level_range=tuple(icfg['level_range']),
                             max_wavelets=icfg['max_wavelets'])
@@ -335,13 +373,17 @@ if __name__ == '__main__':
     ap.add_argument('--burnin', type=int)
     ap.add_argument('--ntemps', type=int)
     ap.add_argument('--rerun-data', action='store_true', help='simulate again even if outputs/<tag>/data.h5 exists')
+    ap.add_argument('--gap', type=float, nargs=2, metavar=('START', 'END'), help='data gap in days, e.g. 12 13')
+    ap.add_argument('--gap-buffer', type=int, default=1, help='time pixels removed on each side of the gap')
     ap.add_argument('--k-trace', action='store_true',
                     help='rerun storing the burn-in and save K of every walker per step (outputs/<tag>/k_trace.npz)')
     a = ap.parse_args()
+    cfg = with_gap(a.gap, a.gap_buffer) if a.gap else CONFIG
     if a.k_trace:
-        out = run_k_trace(a.injection, a.tag)
+        out = run_k_trace(a.injection, a.tag, config=cfg)
         print(f"done in {out['runtime_s'] / 60:.1f} min; reproduces chains.npz: {out.get('matches_chains')}")
         raise SystemExit
-    res, *_ = run(a.injection, a.tag, nsteps=a.nsteps, burnin=a.burnin, ntemps=a.ntemps, rerun_data=a.rerun_data)
+    res, *_ = run(a.injection, a.tag, config=cfg, nsteps=a.nsteps, burnin=a.burnin, ntemps=a.ntemps,
+                  rerun_data=a.rerun_data)
     print(f"done in {res['runtime_s'] / 60:.1f} min; median log L = {np.median(res['log_like']):.2f}"
           + (f", log L(true) = {res['loglike_true']:.2f}" if 'loglike_true' in res else ''))
