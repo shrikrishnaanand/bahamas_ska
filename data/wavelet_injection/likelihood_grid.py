@@ -6,7 +6,7 @@ Uses the run-1 data (seed 2026, wavelet-atom injection, so the model at the inje
 Columns: every analysed WDM pixel (no grouping) | the likelihood grid (time_bin x log-frequency groups).
 Rows:
 1. data / model at the injection: w^2 / sigma^2 per pixel, Y / (nu sigma^2) per group. The Gamma likelihood is
-   a function of this ratio only (Section 6.2 of WAVELET_README.md), and it scatters around 1.
+   a function of this ratio only (reports/GF_TIME_FREQUENCY_NOTE.tex, Sec. 'The likelihood'), and it scatters around 1.
 2. galactic fraction of the variance, r = P S_gal / (P S_gal + S_n): where the likelihood can learn about the
    galaxy. The Fisher information on ln(galactic amplitude) is r^2 / 2 per pixel, i.e. nu r^2 / 2 per group.
 3. as row 1, after zeroing GAP_DAYS of the time series (a hard gap, no taper).

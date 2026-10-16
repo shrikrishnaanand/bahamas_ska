@@ -37,9 +37,9 @@ B1–B7 were fixed on Oct 16, 2026, after commit `d0d5642`; each section below k
 numbers as before the fix) and ends with a **Fixed** paragraph giving the change and how it was verified. Regression
 tests: [tests/test_paper_bugs.py](../tests/test_paper_bugs.py) (11 of its 14 tests fail on the pre-fix code).
 
-The envelope errors F1 and F2 were in the code up to commit `4db1cc9` and were fixed in `66a908d`. Wavelet runs 1 and 2
-([WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md))
-used the pre-fix code and have not been rerun.
+The envelope errors F1 and F2 were in the code up to commit `4db1cc9` and were fixed in `66a908d`. The first wavelet runs 1
+and 2 (Oct 11) used the pre-fix code. Both were redone with the fixed code on Oct 16
+([WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md)).
 
 ---
 
@@ -156,9 +156,9 @@ At the pack-2 values (sin b_M −0.0966, l_M −1.626, s1 0.0416, s2 0.1384, sin
 
   Fitting real or independently simulated data with the pre-fix code would therefore overestimate the Galaxy's
   widths.
-* **Runs 1 and 2** used the pre-fix code for simulation and for both inferences (wavelet and OG). They are internally
-  consistent and their conclusions stand, but run 2's injected "true sky envelope" is not the envelope of a Gaussian
-  Galaxy with the stated parameters.
+* **The first runs 1 and 2 (Oct 11)** used the pre-fix code for simulation and for both inferences (wavelet and OG).
+  They were internally consistent, but run 2's injected "true sky envelope" was not the envelope of a Gaussian
+  Galaxy with the stated parameters. Both were redone with the fixed code on Oct 16.
 * **Pozzoli et al.** uses bahamas and generates its data from the same model it fits, so its injection/recovery
   results are self-consistent in the same way. Its comparison with the independent Yorsh 1b simulation, and any
   physical reading of σ₁², σ₂² and ψ, would be affected if its code had these errors (Q7).
@@ -218,9 +218,9 @@ independent with variance $S/2$ each. So $\lvert\tilde d_k\rvert^2 = \tfrac{S}{2
 \qquad \mathrm{Var}\,\hat P = \frac{S^2}{n_b},
 ```
 
-whereas Eq. (9) implies $\mathrm{Var}\thinspace \hat P = 2S^2/n_b$. Wavelet run 2 measures
-$n_b\thinspace \mathrm{Var}(\hat P/S) = 1.04 \pm 0.04$ on the simulated data, confirming shape $n_b$
-([WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md)). The θ-dependent part of Eq. (9) is exactly one half of the
+whereas Eq. (9) implies $\mathrm{Var}\thinspace \hat P = 2S^2/n_b$. The first wavelet run 2 (Oct 11)
+measured $n_b\thinspace \mathrm{Var}(\hat P/S) = 1.04 \pm 0.04$ on its simulated data, confirming shape $n_b$; the
+bahamas simulator gives the same (see **Fixed** below). The θ-dependent part of Eq. (9) is exactly one half of the
 correct one:
 
 ```math
@@ -548,7 +548,6 @@ These do not make any result wrong, but they matter when the parameters are read
 * **Within-chunk modulation.** The stationary-chunk model discards the variation of $M^2(t)$ within a chunk. For
   monthly chunks this reaches a factor ≈2 in some months (e.g. $A^2$ from 3.7 to 6.9 in month 2 of the pack-2
   envelope). Its bias on the sky parameters as a function of chunk length has not been quantified.
-* **Rerun wavelet runs 1 and 2** with the fixed envelope (F1, F2).
 * **Data kept with unscheduled gaps.** Only stretches longer than 0.9 × `sched_period` are kept. With 3 h unscheduled
   gaps every ~10 days and a 14-day period, about 100 days per year survive, far below the 75% duty cycle. This was
   so before the B5 fix as well.

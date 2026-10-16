@@ -13,12 +13,10 @@ both pipelines see the same noise and the same smooth modulation. Everything els
           ──SignalProcessor.save_data──▶ og/data.h5, og/data_bin.h5, og/time_interval.txt
           ──BayesianInference (Gamma likelihood, nessai)──▶ og/result.hdf5
 
-Degrees of freedom: bahamas' Gamma likelihood (``setting_nessai.gamma_lik``) uses shape dof/2 with dof = ``count``,
-the number of Fourier frequencies in the bin, i.e. one degree of freedom per |d_k|^2. A complex Fourier coefficient
-has two (|d_k|^2 is exponential; checked on the data: count * var(binned/model) = 1.03-1.06, ``data_checks``-style
-test in the run-2 report), so the original likelihood assumes twice the variance of the binned periodogram and its
-posteriors are about sqrt(2) too wide. ``dof_factor = 2`` multiplies dof by 2 at run time (the library is unchanged)
-and writes to ``og_dof2x/`` instead of ``og/``.
+Degrees of freedom: bahamas' Gamma likelihood uses shape dof/2 with dof = 2 * ``count`` (two real degrees of freedom
+per complex Fourier coefficient; reports/PAPER_BUGS.md B2, fixed Oct 16). ``legacy=True`` sets
+``inference: legacy_dof`` instead, i.e. dof = ``count`` as in Pozzoli et al. Eq. (9), whose posteriors are about
+sqrt(2) wider, and writes to ``og_legacy/`` instead of ``og/``.
 
 w is a Tukey window (``chunk: taper`` in og_config.yaml, the tapered fraction). The original chunks were simulated
 directly in the frequency domain, i.e. periodic; a chunk cut from a real series is not, and without a taper the
@@ -26,7 +24,7 @@ rectangular window leaks the steep low-frequency spectrum into the band (+40-70%
 ``data_checks.py``). A 5% taper removes this.
 
 Settings: ``config/og_config.yaml`` (the file paths there are set here) and ``config/sources.yaml``.
-Script: ``python og.py --tag run2 [--nlive 1000] [--data-only]``. As a script it uses bahamas' NumPy backend (as
+Script: ``python og.py --tag run2 [--legacy-dof] [--nlive 1000] [--data-only]``. As a script it uses bahamas' NumPy backend (as
 ``run_pe.py --use_jax False``): nessai's worker pool forks the process, and forked workers deadlock once JAX is
 initialised. Imported after a JAX-backend module (e.g. in a notebook), it keeps that backend: fine for everything
 except ``run`` with ``n_pool``.
@@ -52,21 +50,21 @@ import injection as I
 OG_CONFIG = os.path.join(I.HERE, 'config', 'og_config.yaml')
 
 
-def og_name(dof_factor=1):
-    return 'og' if dof_factor == 1 else f'og_dof{dof_factor:g}x'
+def og_name(legacy=False):
+    return 'og_legacy' if legacy else 'og'
 
 
-def og_dir(tag, dof_factor=1):
-    path = os.path.join(I.OUT, tag, og_name(dof_factor))
+def og_dir(tag, legacy=False):
+    path = os.path.join(I.OUT, tag, og_name(legacy))
     os.makedirs(path, exist_ok=True)
     return path
 
 
-def og_config(tag, nlive=None, n_pool=None, dof_factor=1):
-    """``config/og_config.yaml`` with the file paths of ``outputs/<tag>/og/`` (or ``og_dof<f>x/``)."""
+def og_config(tag, nlive=None, n_pool=None, legacy=False):
+    """``config/og_config.yaml`` with the file paths of ``outputs/<tag>/og/`` (or ``og_legacy/``)."""
     with open(OG_CONFIG) as f:
         cfg = yaml.safe_load(f)
-    d = og_dir(tag, dof_factor)
+    d = og_dir(tag, legacy)
     cfg['file'] = os.path.join(d, 'data')
     cfg['fileAV'] = os.path.join(d, 'data_bin')
     cfg['folder_plot'] = d + '/'
@@ -76,6 +74,8 @@ def og_config(tag, nlive=None, n_pool=None, dof_factor=1):
         cfg['inference']['nlive'] = nlive
     if n_pool:
         cfg['inference']['n_pool'] = n_pool
+    if legacy:
+        cfg['inference']['legacy_dof'] = True
     return cfg
 
 
@@ -148,17 +148,16 @@ def binned_vs_model(sp, f1=None, f2=None):
     return out
 
 
-def run(tag, nlive=None, n_pool=None, dof_factor=1):
-    """Write the OG data of run ``tag`` and run nessai. The result is ``outputs/<tag>/og[_dof<f>x]/result.hdf5``."""
+def run(tag, nlive=None, n_pool=None, legacy=False):
+    """Write the OG data of run ``tag`` and run nessai. The result is ``outputs/<tag>/og[_legacy]/result.hdf5``."""
     from bahamas.bahamas_inference import BayesianInference
-    cfg = og_config(tag, nlive, n_pool, dof_factor)
+    cfg = og_config(tag, nlive, n_pool, legacy)
     make_data(tag, cfg)
-    d = og_dir(tag, dof_factor)
+    d = og_dir(tag, legacy)
     path = os.path.join(d, 'og_config_resolved.yaml')
     with open(path, 'w') as f:
         yaml.safe_dump(cfg, f, sort_keys=False)
     inference = BayesianInference(path, I.SOURCES)
-    inference.dof = [dof_factor * np.asarray(c) for c in inference.dof]
     inference.run()
     for f in ('nested_sampler_resume.pkl', 'nested_sampler_resume.pkl.old'):   # only needed to resume a run
         if os.path.exists(os.path.join(d, f)):
@@ -172,10 +171,11 @@ if __name__ == '__main__':
     ap.add_argument('--tag', required=True)
     ap.add_argument('--nlive', type=int)
     ap.add_argument('--n-pool', type=int)
-    ap.add_argument('--dof-factor', type=float, default=1, help='multiply the Gamma dof (2 = correct for |d|^2)')
+    ap.add_argument('--legacy-dof', action='store_true',
+                    help='Gamma dof as in Pozzoli et al. Eq. (9) (one per |d_k|^2) instead of the correct two')
     ap.add_argument('--data-only', action='store_true', help='only write the chunk data files')
     a = ap.parse_args()
     if a.data_only:
-        make_data(a.tag, og_config(a.tag, dof_factor=a.dof_factor))
+        make_data(a.tag, og_config(a.tag, legacy=a.legacy_dof))
     else:
-        print('result:', run(a.tag, a.nlive, a.n_pool, a.dof_factor))
+        print('result:', run(a.tag, a.nlive, a.n_pool, a.legacy_dof))
