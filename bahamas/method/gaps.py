@@ -50,31 +50,39 @@ def generate_gaps(T_obs, scheduled_gap=7*3600, scheduled_period=14*86400, unsche
             else:
                 merged_gaps.append((start, end))
 
-        # Adjust for duty cycle (rescale gaps to ensure 75% observing time)
+        # Adjust for duty cycle: if the gaps exceed (1 - duty_cycle) T_obs, drop randomly chosen gaps (dropping the
+        # last ones would leave the end of the observation gap-free)
         total_gap_time = sum(end - start for start, end in merged_gaps)
         required_gap_time = (1 - duty_cycle) * T_obs
 
         if total_gap_time > required_gap_time:
             excess_time = total_gap_time - required_gap_time
-            while excess_time > 0 and merged_gaps:
-                start, end = merged_gaps.pop()
-                excess_time -= end - start
-        
-        merged_gaps = np.asarray(merged_gaps)
-        #return start and end of data
-        for i in range(0, len(merged_gaps.T[0])-1):
-            data_start = merged_gaps.T[1][i]
-            data_end = merged_gaps.T[0][i+1]    
-            if data_end - data_start > 0.90 * scheduled_period:          
-                data_seg.append((data_start, data_start +  scheduled_period))
+            keep = np.ones(len(merged_gaps), dtype=bool)
+            for k in np.random.permutation(len(merged_gaps)):
+                if excess_time <= 0:
+                    break
+                keep[k] = False
+                excess_time -= merged_gaps[k][1] - merged_gaps[k][0]
+            merged_gaps = [gap for gap, kept in zip(merged_gaps, keep) if kept]
+
+        # Data stretches between consecutive gaps, including before the first and after the last gap. A stretch
+        # longer than 0.9 sched_period is kept, cut to at most sched_period and never past its own end.
+        stretch_starts = [0.] + [end for _, end in merged_gaps]
+        stretch_ends = [start for start, _ in merged_gaps] + [T_obs]
+        for data_start, data_end in zip(stretch_starts, stretch_ends):
+            if data_end - data_start > 0.90 * scheduled_period:
+                data_seg.append((data_start, min(data_start + scheduled_period, data_end)))
 
     else:
         for start, end in scheduled_gaps:
             data_start = end
-            data_end = end + scheduled_period 
-            data_seg.append((data_start, data_end))
+            data_end = min(end + scheduled_period, T_obs)
+            if data_end - data_start > 0.90 * scheduled_period:
+                data_seg.append((data_start, data_end))
             
     
     data_seg = np.asarray(data_seg)
+    if len(data_seg) == 0:
+        raise ValueError('No data stretch between gaps is longer than 0.9 scheduled_period')
   
     return data_seg.T[0], data_seg.T[1]

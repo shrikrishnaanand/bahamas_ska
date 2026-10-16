@@ -83,7 +83,10 @@ def whittle_lik(data, freqs, response, sources, dt, t1, t2, dof, gen2):
         for i, tdi in enumerate(segment):
             f = jnp.array(freqs[j])
             psd_model = psd.model_psd(freqs=f, response=response[j][i], sources=sample, t1=t1[j], t2=t2[j], tdi=i, gen2 = gen2)
-            log_likelihood += -0.5 * jnp.sum((jnp.abs(tdi) ** 2) / psd_model) - 0.5 * len(f) * jnp.log(2 * jnp.pi) - 0.5 * jnp.sum(jnp.log(psd_model))
+            # dof[j] = real Gaussian degrees of freedom per amplitude: 2 for a complex Fourier amplitude
+            # (|d|^2 ~ S chi^2_2 / 2), 1 with inference: legacy_dof (Pozzoli et al. Eq. 3 as printed)
+            nu = dof[j]
+            log_likelihood += -0.5 * jnp.sum(nu * ((jnp.abs(tdi) ** 2) / psd_model + jnp.log(psd_model) + jnp.log(2 * jnp.pi / nu)))
     numpyro.factor("log_likelihood", log_likelihood)
 
 def gamma_lik(data, freqs, response, sources, dt, t1, t2, dof, gen2):

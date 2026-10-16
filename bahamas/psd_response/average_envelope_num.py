@@ -160,7 +160,10 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     phit1 = fac * t1
     phit2 = fac * t2
     a = EclipticLongitude - alpha0
-    FourphiNbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.)
+    # alpha0, beta0 (Klein et al. App. A): h(b, l) = R[2 (beta0 - alpha0)] h_0(b, l - alpha0), a rotation of the
+    # (h_A, h_E) signals. It leaves A^2 + E^2 unchanged and shifts the phase of A^2 - E^2 by -4 (beta0 - alpha0)
+    # (PAPER_BUGS.md B6), so it enters here and not as a rotation of the envelopes.
+    FourphiNbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.) - 4. * (beta0 - alpha0)
     root3 = jnp.sqrt(3.)
     overall_fact = 1. / 640.
     
@@ -185,14 +188,8 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     Diff += -9. * sthN4 * (81. * jnp.cos(FourphiNbar) + (jnp.sin(8*a - FourphiNbar - 8*phit1) - jnp.sin(8*a - FourphiNbar - 8*phit2)) / (8*T*fac))
     Diff *= overall_fact
     
-    A0 = 0.5 * (jnp.abs(Sum + Diff))
-    E0 = 0.5 * (jnp.abs(Sum - Diff))
-    
-    sDect = jnp.sin(2. * (beta0 - alpha0))
-    cDect = jnp.cos(2. * (beta0 - alpha0))
-
-    A = jnp.abs(cDect * A0 - sDect * E0)  
-    E = jnp.abs(sDect * A0 + cDect * E0) 
+    A = 0.5 * (jnp.abs(Sum + Diff))
+    E = 0.5 * (jnp.abs(Sum - Diff))
     
 
     if lax is not None:

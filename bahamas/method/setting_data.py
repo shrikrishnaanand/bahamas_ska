@@ -48,7 +48,7 @@ def average_chunks(freqs, data, response, chunk_size):
         chunk_size (int): Size of each chunk.
 
     Returns:
-        tuple: Averaged frequency, data, and response arrays.
+        tuple: Averaged frequency, data, response, and count arrays.
     """
     data_chunks = np.array_split(data, len(data) // chunk_size)
     response_chunks = np.array_split(response, len(data) // chunk_size)
@@ -57,8 +57,9 @@ def average_chunks(freqs, data, response, chunk_size):
     d = [np.mean(chunk) for chunk in data_chunks]
     r = [np.mean(chunk) for chunk in response_chunks]
     f = [np.mean(chunk) for chunk in freq_chunks]
+    count = [len(chunk) for chunk in data_chunks]
 
-    return np.array(f), np.array(d), np.array(r)
+    return np.array(f), np.array(d), np.array(r), np.array(count)
 
 
 def average_log_chunks(freqs, data, response, num_bins=50):

@@ -18,18 +18,23 @@ the arXiv PDFs. TeX line numbers refer to `main.tex` of the arXiv sources. Check
 |---|---|---|---|
 | F1 | `cosh` that should be `sinh` in H_S;(3) | code, envelope | **fixed** |
 | F2 | missing $e^{-2\sigma_+^2}$, $e^{-6\sigma_+^2}$ damping on 48 terms | code, envelope | **fixed** |
-| B1 | ERYN Gamma likelihood uses the wrong data term; its maximum is not at $S = \hat P$ | code, `setting_eryn.py` | **open, critical** |
-| B2 | Gamma shape $n_b/2$ should be $n_b$; Whittle carries the same factor ½; posteriors ≈√2 too wide | code and Pozzoli et al. Eqs. (3), (9) | **open**, check with Riccardo (Q1) |
-| B3 | instrument noise differs from Pozzoli et al. Eqs. (16)–(17), by up to 7% in band | code, `psd_noise.py` | **open**, check with Riccardo (Q5) |
-| B4 | gapped data with linear binning: `N` uses the whole `start` array | code, `bahamas_data.py` | **open** |
-| B5 | gapped segments can run up to 10% into the next gap | code, `gaps.py` | **open** |
-| B6 | the α₀/β₀ rotation is applied to envelope amplitudes/powers | code, envelope | latent (inactive at α₀ = β₀ = 0) |
+| B1 | ERYN Gamma likelihood uses the wrong data term; its maximum is not at $S = \hat P$ | code, `setting_eryn.py` | **fixed** |
+| B2 | Gamma shape $n_b/2$ should be $n_b$; Whittle carries the same factor ½; posteriors ≈√2 too wide | code and Pozzoli et al. Eqs. (3), (9) | **fixed** in the code; `legacy_dof` reproduces the paper; Q1 still open |
+| B3 | instrument noise differs from Pozzoli et al. Eqs. (16)–(17), by up to 7% in band | code, `psd_noise.py` | **option added** (`paper_eqs`); default unchanged until Q5 is answered |
+| B3b | A/E test-mass transfer function differs from Nam et al. (2023) Table II; ≤0.3% on the total noise PSD in band | code, `psd_noise.py` | **fixed** |
+| B4 | gapped data with linear binning: `N` uses the whole `start` array | code, `bahamas_data.py` | **fixed** |
+| B5 | gapped segments can run up to 10% into the next gap | code, `gaps.py` | **fixed** |
+| B6 | the α₀/β₀ rotation is applied to envelope amplitudes/powers | code, envelope | **fixed** (was latent: inactive at α₀ = β₀ = 0) |
 | M1 | −240 should be −2430 in H_D;(4) | Klein et al. | misprint; the code is right |
 | M2 | `4φ_L` should be `4Δφ_L` in H_D;(4) | Klein et al. | misprint; the code is right |
 | M3 | "sin Δ3φ_L" should be sin 3Δφ_L in H_S;(3) | Klein et al. | misprint; the code is right |
 | M4 | $\mathcal F_k = \lbrace m \mid \dots\rbrace$ should be $\mathcal F_m = \lbrace k \mid \dots\rbrace$ | Pozzoli et al. Eq. (7) | misprint |
 | Q1–Q8 | open questions for Riccardo | | see [below](#questions-for-riccardo) |
 | C1–C4 | conventions that are not errors | Klein et al. | see [below](#conventions-not-errors) |
+
+B1–B6 were fixed on Oct 16, 2026, after commit `d0d5642`; each section below keeps the original description (line
+numbers as before the fix) and ends with a **Fixed** paragraph giving the change and how it was verified. Regression
+tests: [tests/test_paper_bugs.py](../tests/test_paper_bugs.py) (10 of its 13 tests fail on the pre-fix code).
 
 The envelope errors F1 and F2 were in the code up to commit `4db1cc9` and were fixed in `66a908d`. Wavelet runs 1 and 2
 ([WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md))
@@ -76,11 +81,11 @@ measure, see C1) and an exact numerical Gaussian sky average:
 
 The remaining 0.4–0.5% comes from the orbit models: the paper uses a rigid constellation, bahamas an eccentric orbit.
 
-Line numbers below refer to `modulation.py`; in `average_envelope.py` the same lines are 12 further down.
+Line numbers below refer to `modulation.py` as it is now; in `average_envelope.py` the same lines are 12 further down.
 
 ### F1. `cosh` instead of `sinh` in H_S;(3)
 
-[modulation.py:156](../bahamas/psd_response/modulation.py#L156), the −864 term. The paper prints
+[modulation.py:159](../bahamas/psd_response/modulation.py#L159), the −864 term. The paper prints
 
 ```math
 -864\left(\cosh\frac{3\sigma_s^2}{2}\sin b_M\cos 3\Delta\phi_L + \sinh\frac{3\sigma_s^2}{2}\cos b_M\sin 3\Delta\phi_L\right)
@@ -104,8 +109,9 @@ $e^{-6\sigma_+^2}$, e.g. H_S;(1):
 -32112\, e^{-2\sigma_+^2}\left(\cosh\frac{3\sigma_s^2}{2}\sin 3b_M\cos\Delta\phi_L + \sinh\frac{3\sigma_s^2}{2}\cos 3b_M\sin\Delta\phi_L\right)
 ```
 
-The code had these factors (`fact3b`, `fact5b`) only in H_S;(0) (line 143) and H_D;(4) (line 169). It dropped
-them in the other 24 + 24 terms of `Sum` (lines 146–164) and `Diff` (lines 171–202). The fix puts them on the
+The code had these factors (`fact3b`, `fact5b`) only in H_S;(0) (line 146) and H_D;(4) (line 172). It dropped
+them in the other 48 terms: 8 lines of `Sum` (lines 149–167) and 16 of `Diff` (lines 174–205), each line with a
+cosh and a sinh term. The fix puts them on the
 coefficient, as in the paper:
 
 ```diff
@@ -158,9 +164,10 @@ At the pack-2 values (sin b_M −0.0966, l_M −1.626, s1 0.0416, s2 0.1384, sin
 
 ---
 
-## Open bugs in the code
+## Code bugs B1–B6 (fixed Oct 16, 2026)
 
-None of these is fixed yet.
+Line numbers in the descriptions refer to the code before the fix (commit `d0d5642`); the **Fixed**
+paragraphs give the current ones.
 
 ### B1. ERYN Gamma likelihood: wrong data term (critical)
 
@@ -191,8 +198,10 @@ Pozzoli et al. Eq. (9). **Any ERYN run with `likelihood: Gamma` is invalid:** th
 edge of their priors. The HMC and nessai versions ([setting_hmc.py:112](../bahamas/method/setting_hmc.py#L112),
 [setting_nessai.py:77](../bahamas/method/setting_nessai.py#L77)) are correct up to B2.
 
-**Fix:** use the same expression as `setting_hmc.gamma_lik`, i.e. `(dof/2 - 1)*log(tdi)` and
-`- (dof/2) * tdi / psd_model`. The ERYN Whittle likelihood (lines 78–82) is fine apart from B2.
+**Fixed:** [setting_eryn.py:136-142](../bahamas/method/setting_eryn.py#L136-L142) now uses the same expression as
+`setting_hmc.gamma_lik`: `(dof/2 - 1)*log(tdi)` and `- (dof/2) * tdi / psd_model`. Verified on a grid of $S$ with
+30 bins at $\hat P$ = 10⁻⁴⁰: the maximum is at $S = \hat P$ and the curvature in $\ln S$ is −900 = −n_b × 30 bins, the
+same as HMC and nessai.
 
 ### B2. Degrees of freedom of the Gamma and Whittle likelihoods
 
@@ -226,12 +235,26 @@ The Whittle likelihood, Pozzoli et al. Eq. (3), and the code
 per complex amplitude. The exact complex Whittle likelihood is $-(\lvert\tilde d\rvert^2/S + \ln S)$. So the Whittle
 and Gamma likelihoods agree with each other, as Pozzoli et al. find, but are both tempered by ½.
 
-**Fix:** pass `2*count` as `dof` in [setting_inference.py:198](../bahamas/method/setting_inference.py#L198), and
-drop the ½ in the three `whittle_lik`. Setting `inference: beta: 2` gives the same posterior for NUTS without touching
-the code, but evidences then carry a different constant. The wavelet likelihood
-([model.py](../bahamas/wavelet/model.py)) is not affected: WDM coefficients are real, so shape ν/2 is exact there
-([WAVELET_README.md §6.3](WAVELET_README.md)). This is reported as a bug because the statistics are unambiguous. It
-also changes the paper's quoted uncertainties, so it should be raised with Riccardo before fixing (Q1).
+**Fixed:** `dof` now counts real Gaussian degrees of freedom:
+[setting_inference.py:200-204](../bahamas/method/setting_inference.py#L200-L204) passes `dof = 2*count` (two per complex
+amplitude), so the unchanged Gamma formulas (shape `dof/2`) have shape $n_b$. The three `whittle_lik`
+([setting_hmc.py:88-89](../bahamas/method/setting_hmc.py#L88-L89), [setting_nessai.py:51-52](../bahamas/method/setting_nessai.py#L51-L52),
+[setting_eryn.py:79-80](../bahamas/method/setting_eryn.py#L79-L80)) use the same `dof` (ν per amplitude):
+
+```math
+\ln\mathcal L_W = -\frac12\sum_k \nu\left(\frac{\lvert\tilde d_k\rvert^2}{S_k} + \ln S_k + \ln\frac{2\pi}{\nu}\right),
+```
+
+which for ν = 2 is the circular complex Gaussian density $-\sum_k(\lvert\tilde d_k\rvert^2/S_k + \ln \pi S_k)$ and for
+ν = 1 is Eq. (3) as printed. Setting `inference: legacy_dof: true` passes `dof = count` and reproduces the paper's
+Eqs. (3) and (9) exactly, including the constants, for comparisons with published results. Runs that used
+`beta: 2` as a workaround should go back to `beta: 1`.
+
+Verified: on a grid of $S$, every Gamma and Whittle version peaks at $S = \hat P$, with curvature $-n_b$ per bin
+(−n_b/2 with `legacy_dof`); the fixed Whittle value equals the complex Gaussian density, and the legacy value
+equals the old code's, to 10⁻¹². Data from the bahamas simulator itself (gapped, `lin` and `log`) give
+$n_b\thinspace\mathrm{Var}(\hat P/S)$ = 0.94–1.10, i.e. shape $n_b$. The wavelet likelihood is unchanged.
+Posteriors are now ≈√2 narrower than with the paper's likelihood, and evidences change.
 
 ### B3. Instrument noise differs from Pozzoli et al. Eqs. (16)–(17)
 
@@ -253,6 +276,70 @@ Data and model both use the code's version, so injection/recovery runs are self-
 when comparing with the paper or with data simulated elsewhere (e.g. Yorsh). Which form the paper's runs used is
 question Q5.
 
+**Option added:** the default is unchanged (existing runs stay reproducible). A fixed parameter `paper_eqs` in the
+`instr_noise` source switches to Eqs. (16)–(17) exactly
+([psd_noise.py:44-72](../bahamas/psd_strain/psd_noise.py#L44-L72), [psd_noise.py:269-273](../bahamas/psd_strain/psd_noise.py#L269-L273)):
+
+```yaml
+instr_noise:
+  - name: "A"
+    bounds: [1, 5]
+    injected: 2.4
+  - name: "P"
+    bounds: [3, 10]
+    injected: 7.9
+  - name: "paper_eqs"
+    injected: 1
+```
+
+It applies to the `acc_noise` and `oms_noise` sources too. With it, `noise()` equals Eqs. (16)–(17) times the Nam et
+al. transfer functions to 10⁻¹⁰ in A, E and T. Once Q5 is answered, the default can be switched if needed.
+
+### B3b. A/E test-mass transfer function differs from Nam et al. (2023)
+
+Pozzoli et al. do not print the TDI transfer functions; they cite Nam et al., PRD 108, 082004 (2023),
+[arXiv:2211.02539](https://arxiv.org/abs/2211.02539), Table II (A, E, T, uncorrelated noises, page 13). Checked on
+Oct 16, 2026 against the arXiv TeX source.
+
+**Conventions.** Table II is TDI 2.0, with $C_{XX} = 16\sin^2 w\sin^2 2w$ and $w = 2\pi f L$. The code writes the
+TDI 1.0 form with `Cxx = 8 sin²w` and, for `gen2=True`, multiplies by the TDI 2.0 factor
+$\lvert 1 - e^{-4iw}\rvert^2 = 4\sin^2 2w$. So `Cxx` × 4 sin²2w = 2 $C_{XX}$, and the code's coefficients are half
+the table's. **The `gen2` factor 4 sin²2w is correct; do not change it to 2 sin²2w**, which would only relabel
+$C_{XX}$ and halve every TDI-2 noise PSD.
+
+| row (uncorrelated) | code, × 4 sin²2w | Nam et al. Table II | |
+|---|---|---|---|
+| OMS (readout ISI/RFI), A&E | 2 C_XX (2 + cos w) | 2 C_XX (2 + cos w) | ✓ |
+| OMS, T | 4 C_XX (1 − cos w) | 4 C_XX (1 − cos w) | ✓ |
+| TM acceleration, T | 8 C_XX (1 − cos w)² | 32 C_XX sin⁴(w/2) | ✓ (identical) |
+| TM acceleration, A&E | **8 C_XX (1 + 2 cos w)** | **4 C_XX (3 + 2 cos w + cos 2w)** | ✗ |
+
+With cos 2w = 2cos²w − 1 the table's TM A&E entry is 8 C_XX (1 + cos w + cos²w), so the code has `2 cos w` where
+it should have `cos w + cos²w`. The two agree only where cos w ∈ {0, 1}, i.e. they share the low-frequency limit
+(24 C_XX), and differ in shape above it. No overall factor fixes this. Affected lines:
+[psd_noise.py:125](../bahamas/psd_strain/psd_noise.py#L125) (`transfer_functions_acc`) and
+[psd_noise.py:189](../bahamas/psd_strain/psd_noise.py#L189) (`psd_AE`, the one used by the likelihood via `noise()`).
+
+| f (mHz) | 0.1 | 1 | 4.4 | 10 | 20 | 29 | 40 |
+|---|---|---|---|---|---|---|---|
+| TM A/E transfer, code / Nam | 1.000 | 1.0005 | 1.009 | 1.044 | 1.142 | 1.052 | 0.019 |
+| total A/E noise PSD, code / with Nam TM | 1.000 | 1.0004 | 1.003 | 1.001 | 1.000 | 1.000 | 1.000 |
+
+OMS noise dominates where the transfer functions differ, so the effect on the total PSD is at most 0.3% in band, much
+smaller than B3. Data and model use the same function, so injection/recovery is self-consistent. Above about 40 mHz
+the code's TM term becomes negative (1 + 2 cos w < 0); this is outside the current band but would matter if `f2` were
+raised.
+
+**Fixed:** in both places ([psd_noise.py:141](../bahamas/psd_strain/psd_noise.py#L141) and
+[psd_noise.py:205](../bahamas/psd_strain/psd_noise.py#L205)),
+
+```python
+tr_acc_AE = Cxx * 4*(1 + jnp.cos(w) + jnp.cos(w)**2)   # = Cxx * 2*(3 + 2cos w + cos 2w), Nam et al. Table II
+```
+
+The T-channel and OMS expressions needed no change. All four TDI-2 transfer functions now equal Table II to 10⁻¹⁰ over
+0.1–35 mHz (test `test_noise_transfer_functions_nam`). The default noise PSD changes by at most 0.3% in band.
+
 ### B4. Gapped data with linear binning: `N` is an array
 
 [bahamas_data.py:191](../bahamas/bahamas_data.py#L191):
@@ -266,6 +353,24 @@ N = (self.end[i] - self.start) // self.dt      # should be self.start[i]
 templates, it is unused. A related oddity: in `lin` mode `dof = N // nseg` counts *time* samples, so a chunk of
 $N/2$ frequencies yields about `nseg/2` bins, not `nseg`.
 
+Running the gapped `lin` path end to end shows that the first part is not silent: `average_chunks` receives an array of
+section counts, some negative, and crashes (`TypeError: slice indices must be integers`).
+
+**Fixed:**
+
+* [bahamas_data.py:191](../bahamas/bahamas_data.py#L191) uses `self.start[i]`.
+* In `lin` mode, [bahamas_data.py:286-294](../bahamas/bahamas_data.py#L286-L294) splits the positive frequencies
+  (the DC amplitude is zero) into `nseg` bins of `len(freqs > 0) // nseg` amplitudes. `average_chunks` now also
+  returns the number of amplitudes actually averaged in each bin
+  ([setting_data.py:60](../bahamas/method/setting_data.py#L60)), which is stored as `count`. Chunked `lin` runs
+  therefore get `nseg` bins instead of about `nseg/2`.
+* The PSD-to-amplitude factor uses each segment's own length
+  ([bahamas_data.py:273](../bahamas/bahamas_data.py#L273)), needed once gapped segments can be shorter than
+  `sched_period` (B5).
+
+Verified with `SignalProcessor` on gapped data: `lin` runs, gives 50 bins for `nseg: 50`, mean $\hat P/S$ = 0.99 and
+$n_b\thinspace\mathrm{Var}(\hat P/S)$ = 1.06–1.10 against the bin-averaged injected PSD.
+
 ### B5. Gapped segments can extend into the next gap
 
 [gaps.py:68-69](../bahamas/method/gaps.py#L68-L69): with unscheduled gaps, a stretch of data between two gaps is kept
@@ -273,7 +378,23 @@ if it is longer than 0.9 × `sched_period`, but the segment is then set to exact
 kept stretch shorter than `sched_period` therefore runs up to 10% into the following gap. In simulations this only
 means slightly more data than the gap pattern allows; on real data, the segment would include gap samples. Separately,
 when the gaps exceed the duty cycle, the loop removes gaps from the *end* of the list, so the gap pattern is not
-uniform over the year.
+uniform over the year. Two smaller issues in the same function: the loop over stretches stops one gap early, so the
+stretch after the last gap is never used, and without unscheduled gaps the last segment can end after `T_obs` (day
+71.5 of a 60-day run in one test).
+
+**Fixed** ([gaps.py:53-87](../bahamas/method/gaps.py#L53-L87)):
+
+* A kept stretch is cut to `min(start + sched_period, stretch end)`, so segments never contain gap samples.
+* The stretches before the first and after the last gap are considered too.
+* Without unscheduled gaps, segments are clipped at `T_obs` and kept only if longer than 0.9 × `sched_period`.
+* When the gaps exceed the duty cycle, randomly chosen gaps are removed instead of the last ones. A run with a given
+  seed then has a different gap pattern from before, but only when this branch is reached.
+* If no stretch survives, the function raises a clear `ValueError` instead of an `IndexError`.
+
+Segments can now be shorter than `sched_period`, so the normalisation uses each segment's own length (B4). Verified
+over 20 seeds (1 yr, 14-day period, 3 h unscheduled gaps every ~10 days): before, 28 of 144 segments contained gap
+samples; now none do, with the same data per year (101 vs 102 days). A 3.6-day segment of a 4-day period gives mean
+$\hat P/S$ = 0.99; the old fixed normalisation would give 0.9.
 
 ### B6. α₀/β₀ rotation applied to amplitudes and powers (latent)
 
@@ -283,7 +404,32 @@ $A = \lvert\cos 2(\beta_0-\alpha_0)A_0 - \sin 2(\beta_0-\alpha_0)E_0\rvert$ to e
 and to chunk-averaged powers (`average_envelope.py`). Klein et al. App. A apply this rotation to the *signals*
 $h_A$, $h_E$. The power envelope of the rotated channels then needs the A–E cross term, which is not computed. This
 has no effect while α₀ = β₀ = 0, as everywhere in bahamas and in both papers, but non-zero values would give wrong
-envelopes.
+envelopes. The same rotation was also in `average_envelope_num.py` (lines 191–195 before the fix),
+used by `galactic_DWD_num`.
+
+**Fixed:** the rotation does not need the cross term after all. Rotating $(h_A, h_E)$ by $2\chi$ with
+$\chi = \beta_0 - \alpha_0$ (Klein et al. TeX lines 694–697) leaves $A^2 + E^2$ unchanged and shifts the phase of
+$A^2 - E^2$:
+
+```math
+\sum_n h_{D;(n)} \cos\left(n\Delta\phi_L + 4\bar l\right) \;\to\; \sum_n h_{D;(n)} \cos\left(n\Delta\phi_L + 4\bar l - 4\chi\right).
+```
+
+This was checked against the paper's detector model with the rotation applied to the signals (point source,
+inclination and polarisation averaged, 100 random $b$, $l$, $t$, $\chi$): agreement to 10⁻¹⁴. Since $\chi$ is a
+constant, the shift passes through the Gaussian sky average unchanged. The code now subtracts $4(\beta_0 - \alpha_0)$
+from `FourphiMbar` ([modulation.py:86](../bahamas/psd_response/modulation.py#L86),
+[average_envelope.py:98](../bahamas/psd_response/average_envelope.py#L98),
+[average_envelope_num.py:166](../bahamas/psd_response/average_envelope_num.py#L166)) and no longer rotates the
+envelopes. The $l \to l - \alpha_0$ shift was already there.
+
+Verified:
+
+* Point source, random α₀ and β₀, against the detector model with the paper's rotation: 2×10⁻¹⁴ (pre-fix code: errors
+  up to a factor 6). This includes the fixed π/6 offset of C3.
+* The chunk average equals the time average of the instantaneous envelope at the pack-2 widths with α₀, β₀ ≠ 0 to
+  7×10⁻⁹ (pre-fix: 110%).
+* At α₀ = β₀ = 0 the output is unchanged to 10⁻¹⁴.
 
 ---
 
@@ -315,7 +461,8 @@ $\mathcal F_m = \lbrace k \mid f_m \lt f_k \lt f_{m+1}\rbrace$.
 
 **Q1. Degrees of freedom (B2).** Is the shape $n_{b_m}/2$ in Eq. (9), and the ½ in Eq. (3), intentional, e.g. a
 convention in which each complex amplitude counts as one degree of freedom? With $\langle\lvert\tilde d\rvert^2\rangle = S$
-(Eq. 2), the exact shape is $n_{b_m}$, and the published posteriors would be about √2 too wide.
+(Eq. 2), the exact shape is $n_{b_m}$, and the published posteriors would be about √2 too wide. The code now uses
+the exact likelihood by default; `inference: legacy_dof: true` reproduces Eqs. (3) and (9) as printed.
 
 **Q2. Frequency band.** Pozzoli et al. quote $f_{\max} = 2.9$ mHz. The bahamas template uses `f2: 0.029` (29 mHz),
 and the GF knee lies near a few mHz, so 2.9 mHz looks like a misprint for 29 mHz. Which value was used?
@@ -330,12 +477,12 @@ fixed `fknee`, `fr1`) for all chunks, so the drift is not implemented.
 multiplies both noise and GF by $4\sin^2(4\pi f L)$. Which was used for the paper's runs?
 
 **Q5. Noise model (B3).** Were the paper's runs made with Eqs. (16)–(17) as printed, or with the bahamas form (no
-8 mHz factor, filtered OMS)? Also, the A/E test-mass transfer function in the code is $8\sin^2 w\cdot 4(1+2\cos w)$
-with $w = 2\pi f L$. Please confirm that this is the Nam et al. (2023) expression the paper cites: it equals
-$16\sin^2 w\thinspace(3+2\cos w+\cos 2w)$ only where $\cos w \in \lbrace 0, 1\rbrace$. We did not verify this.
+8 mHz factor, filtered OMS)? Also, the A/E test-mass transfer function in the code does not match Nam et al. (2023)
+Table II, which the paper cites (B3b, now fixed). Did the paper's runs use the code's form? The default noise
+levels are unchanged; `paper_eqs` switches to Eqs. (16)–(17).
 
 **Q6. Coarse-grid definition.** Eqs. (5)–(8) place $n_g = 1000$ log bins between $f_{\min}$ and $f_{\max}$. The code
-([setting_data.py:81-82](../bahamas/method/setting_data.py#L81-L82)) places `nseg` bins between $1/T$ and the
+([setting_data.py:82-83](../bahamas/method/setting_data.py#L82-L83)) places `nseg` bins between $1/T$ and the
 Nyquist frequency, then keeps those inside `[f1, f2]`. For a one-month chunk only 481 of 1000 bins fall in
 [0.1, 29] mHz, and they are about 1.2% wide instead of the paper's narrower bins. Which definition produced the
 paper's results?
@@ -370,13 +517,19 @@ These do not make any result wrong, but they matter when the parameters are read
 ## Approximations still to investigate
 
 * **Model at the bin midpoint.** The chunked model evaluates $S(\theta)$ at one frequency per coarse bin
-  (`0.5*(first + last)`, [setting_data.py:90](../bahamas/method/setting_data.py#L90)), not averaged over the bin.
+  (`0.5*(first + last)`, [setting_data.py:91](../bahamas/method/setting_data.py#L91)), not averaged over the bin.
   This is negligible for smooth spectra, but not near sharp features such as the TDI-2 zero of $\sin^2(4\pi f L)$ at
   1/(4L) ≈ 30 mHz, just above the band edge.
 * **Within-chunk modulation.** The stationary-chunk model discards the variation of $M^2(t)$ within a chunk. For
   monthly chunks this reaches a factor ≈2 in some months (e.g. $A^2$ from 3.7 to 6.9 in month 2 of the pack-2
   envelope). Its bias on the sky parameters as a function of chunk length has not been quantified.
 * **Rerun wavelet runs 1 and 2** with the fixed envelope (F1, F2).
+* **Data kept with unscheduled gaps.** Only stretches longer than 0.9 × `sched_period` are kept. With 3 h unscheduled
+  gaps every ~10 days and a 14-day period, about 100 days per year survive, far below the 75% duty cycle. This was
+  so before the B5 fix as well.
+* **`average_envelope_num.py` not verified.** Apart from B6, this point-source time average (used by
+  `galactic_DWD_num`) has not been checked against the paper. Some phases look suspicious, e.g.
+  `sin(4*(a - FourphiNbar - phit1))` multiplies `FourphiNbar`, which already contains the factor 4, by 4 again.
 
 ## Reproduce
 
@@ -386,6 +539,10 @@ cd data/needlet_patches
 ../../.venv/bin/python envelope_check.py      # first-principles comparison and impact on the pack-2 envelope
 ```
 
-`paper_terms_check.py` reads the pre-fix code from git (commit `4db1cc9`). The checks for B1–B3 are short enough to
-repeat by hand: evaluate each likelihood on a grid of $S$ for fixed $\hat P$, and evaluate `psd_AE` against
-Eqs. (16)–(17).
+`paper_terms_check.py` reads the pre-fix code from git (commit `4db1cc9`). The B1–B6 fixes are covered by
+
+```
+.venv/bin/python -m pytest tests/test_paper_bugs.py      # ~15 s
+```
+
+The likelihood checks can also be repeated by hand: evaluate each likelihood on a grid of $S$ for fixed $\hat P$.

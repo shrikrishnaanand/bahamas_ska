@@ -188,7 +188,7 @@ class SignalProcessor:
             )
             for i in range(len(self.start)):
                 df = 1 / (self.end[i] - self.start[i])
-                N = (self.end[i] - self.start) // self.dt
+                N = (self.end[i] - self.start[i]) // self.dt
           
                 freqs = np.arange(0, 1 / (2 * self.dt), df)
                 self.freq_tot.append(freqs)
@@ -267,13 +267,13 @@ class SignalProcessor:
         Simulate data based on the configuration and sources.
         """
         f_av, response, data, responseAV, dataAV, count = [], [], [], [], [], []
-        N = self.TOBS // self.dt
-
-        # Conversion factor from PSD to Fourier coefficients
-        factor = (2 * self.dt / N)**0.5
-
         for i, freqs in enumerate(self.freq_tot):
-            
+            # Conversion factor from PSD to Fourier coefficients, with this segment's own length (gapped
+            # segments need not all have the same length)
+            N = self.N_tot[i]
+            factor = (2 * self.dt / N)**0.5
+
+
             response_tdi = self.compute_response(freqs)
             
             data_chunk_tdi, data_chunk_tdi_av, response_tdi_av = [], [], []
@@ -284,12 +284,14 @@ class SignalProcessor:
                 data_chunk_tdi.append(_tdi)
 
                 if self.config['mod'] == 'lin':
-                    dof = self.N_tot[i] // self.nseg
-                    f, d_av_tdi, R_av_tdi = setting_data.average_chunks(freqs, np.abs(_tdi)**2, response_tdi[ind_tdi], dof)      
+                    # nseg bins of positive frequencies (the DC amplitude is zero); count = amplitudes per bin
+                    pos = freqs > 0
+                    chunk_size = np.sum(pos) // self.nseg
+                    f, d_av_tdi, R_av_tdi, c = setting_data.average_chunks(freqs[pos], np.abs(_tdi[pos])**2, response_tdi[ind_tdi][pos], chunk_size)
                     data_chunk_tdi_av.append(d_av_tdi)
                     response_tdi_av.append(R_av_tdi)
-                    if ind_tdi == 0:                  
-                        count.append(dof*np.ones_like(f))
+                    if ind_tdi == 0:
+                        count.append(c)
 
                 elif self.config['mod'] == 'log':
                     f, d_av_tdi, R_av_tdi, c = setting_data.average_log_chunks(freqs, np.abs(_tdi)**2, response_tdi[ind_tdi], self.config['nseg'])

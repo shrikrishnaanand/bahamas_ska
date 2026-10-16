@@ -197,8 +197,14 @@ def set(config, sources):
 
     count = np.array(count)
 
+    # Real Gaussian degrees of freedom per data point: each complex Fourier amplitude carries two (real and
+    # imaginary part), so a coarse bin averaging n_b amplitudes has 2 n_b (PAPER_BUGS.md B2).
+    # inference: legacy_dof: True reproduces Pozzoli et al. Eqs. (3) and (9) as printed (one per amplitude).
+    dof_per_amplitude = 1 if config['inference'].get('legacy_dof', False) else 2
+    dof = [dof_per_amplitude * np.asarray(c) for c in count]
+
     # Setup Inference Method
     infer = InferenceMethod(config, t1, t2, count)
     log_like = infer.select_method()
 
-    return log_like, data, freqs, response, config['dt'], t1, t2, count, gen2
+    return log_like, data, freqs, response, config['dt'], t1, t2, dof, gen2

@@ -47,7 +47,9 @@ def whittle_lik(sample, data, freqs, response, dt, t1, t2, dof, gen2):
             psd_model = psd.model_psd(
                 freqs=f, response=response[j][i], sources=sample, t1=t1[j], t2=t2[j], tdi=i, gen2=gen2
             )
-            log_likelihood += -0.5 * np.sum((np.abs(tdi) ** 2) / psd_model) - 0.5 * len(f) * np.log(2 * np.pi)  - 0.5 * np.sum(np.log(psd_model))
+            # dof[j] = real Gaussian degrees of freedom per amplitude (2 for complex; 1 with legacy_dof)
+            nu = dof[j]
+            log_likelihood += -0.5 * np.sum(nu * ((np.abs(tdi) ** 2) / psd_model + np.log(psd_model) + np.log(2 * np.pi / nu)))
 
     return log_likelihood
 

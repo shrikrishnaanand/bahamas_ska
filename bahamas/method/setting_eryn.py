@@ -75,11 +75,9 @@ def whittle_lik(coords, data, freqs, response, sources, dt, t1, t2, dof, gen2, i
                 tdi=i, 
                 gen2=gen2
             )
-            log_likelihood += (
-                -0.5 * np.sum((np.abs(tdi) ** 2) / psd_model) 
-                - 0.5 * len(f) * np.log(2 * np.pi)
-                - 0.5 * np.sum(np.log(psd_model))
-            )
+            # dof[j] = real Gaussian degrees of freedom per amplitude (2 for complex; 1 with legacy_dof)
+            nu = dof[j]
+            log_likelihood += -0.5 * np.sum(nu * ((np.abs(tdi) ** 2) / psd_model + np.log(psd_model) + np.log(2 * np.pi / nu)))
     
     return log_likelihood
 
@@ -136,10 +134,11 @@ def gamma_lik(coords, data, freqs, response, sources, dt, t1, t2, dof, gen2, ind
                 gen2=gen2
             )
             log_likelihood += jnp.sum(
-                (dof[j] / 2 - 1) * jnp.log(jnp.abs(tdi) ** 2) 
-                - (dof[j] / 2) * jnp.log(psd_model) 
-                - jsc.special.gammaln(dof[j] / 2) 
-                - (jnp.abs(tdi) ** 2) / (2 * psd_model)
+                # tdi is the averaged periodogram P_hat (a power): Gamma(shape dof/2, scale 2 S / dof)
+                (dof[j] / 2 - 1) * jnp.log(tdi)
+                - (dof[j] / 2) * jnp.log(psd_model)
+                - jsc.special.gammaln(dof[j] / 2)
+                - (dof[j] / 2) * tdi / psd_model
             )
     
     return log_likelihood

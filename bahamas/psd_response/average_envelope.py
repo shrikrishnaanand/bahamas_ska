@@ -92,7 +92,10 @@ def average_envelopes_gaussian(SinEclipticLatitude, EclipticLongitude, Sigma1, S
     phit2 = fac * t2
     a =  (EclipticLongitude - alpha0)
 
-    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.)
+    # alpha0, beta0 (Klein et al. App. A): h(b, l) = R[2 (beta0 - alpha0)] h_0(b, l - alpha0), a rotation of the
+    # (h_A, h_E) signals. It leaves A^2 + E^2 unchanged and shifts the phase of A^2 - E^2 by -4 (beta0 - alpha0)
+    # (PAPER_BUGS.md B6), so it enters here and not as a rotation of the envelopes.
+    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.) - 4. * (beta0 - alpha0)
 
     sbM = SinEclipticLatitude 
     cbM = jnp.sqrt(1 - sbM**2)
@@ -213,14 +216,8 @@ def average_envelopes_gaussian(SinEclipticLatitude, EclipticLongitude, Sigma1, S
                           - 9. * fact5b * (cosh10SigmaSqSin * c8DphiL_4phiMbar * c5bM - sinh10SigmaSqSin * s8DphiL_4phiMbar * s5bM))
 
     Diff *= overall_factor
-    A0 = (0.5 * jnp.abs(Sum + Diff))
-    E0 = (0.5 * jnp.abs(Sum - Diff))
-
-    sDect = jnp.sin(2. * (beta0 - alpha0))
-    cDect = jnp.cos(2. * (beta0 - alpha0))
-
-    A = jnp.abs(cDect * A0 - sDect * E0)  
-    E = jnp.abs(sDect * A0 + cDect * E0) 
+    A = 0.5 * jnp.abs(Sum + Diff)
+    E = 0.5 * jnp.abs(Sum - Diff)
     
 
     if lax is not None:
