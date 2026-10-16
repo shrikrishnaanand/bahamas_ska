@@ -176,7 +176,7 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     Sum *= overall_fact
     
     # A^2 - E^2
-    Diff = (-1296. + 6480. * sthN2 - 5670. * sthN4) * (jnp.sin(4. * (a - FourphiNbar - phit1)) - jnp.sin(4. * (a - FourphiNbar - phit2))) / (4. * T * fac)
+    Diff = (-1296. + 6480. * sthN2 - 5670. * sthN4) * (jnp.sin(4. * a - FourphiNbar - 4. * phit1) - jnp.sin(4. * a - FourphiNbar - 4. * phit2)) / (4. * T * fac)
     Diff += root3 * cthN * sthN * (864. - 1512. * sthN2) \
         * (-3. * (jnp.sin(3*a - FourphiNbar - 3*phit1) - jnp.sin(3*a - FourphiNbar - 3*phit2)) / (3*T*fac) + (jnp.sin(5*a - FourphiNbar - 5*phit1) - jnp.sin(5*a - FourphiNbar - 5*phit2)) / (5*T*fac))
     Diff += sthN2 * (-648. + 756. * sthN2) \

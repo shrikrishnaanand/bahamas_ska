@@ -25,6 +25,7 @@ the arXiv PDFs. TeX line numbers refer to `main.tex` of the arXiv sources. Check
 | B4 | gapped data with linear binning: `N` uses the whole `start` array | code, `bahamas_data.py` | **fixed** |
 | B5 | gapped segments can run up to 10% into the next gap | code, `gaps.py` | **fixed** |
 | B6 | the α₀/β₀ rotation is applied to envelope amplitudes/powers | code, envelope | **fixed** (was latent: inactive at α₀ = β₀ = 0) |
+| B7 | point-source chunk average: the n = 4 term of A² − E² uses 16 l̄ instead of 4 l̄; A and E off by up to 8% | code, `average_envelope_num.py` | **fixed** |
 | M1 | −240 should be −2430 in H_D;(4) | Klein et al. | misprint; the code is right |
 | M2 | `4φ_L` should be `4Δφ_L` in H_D;(4) | Klein et al. | misprint; the code is right |
 | M3 | "sin Δ3φ_L" should be sin 3Δφ_L in H_S;(3) | Klein et al. | misprint; the code is right |
@@ -32,9 +33,9 @@ the arXiv PDFs. TeX line numbers refer to `main.tex` of the arXiv sources. Check
 | Q1–Q8 | open questions for Riccardo | | see [below](#questions-for-riccardo) |
 | C1–C4 | conventions that are not errors | Klein et al. | see [below](#conventions-not-errors) |
 
-B1–B6 were fixed on Oct 16, 2026, after commit `d0d5642`; each section below keeps the original description (line
+B1–B7 were fixed on Oct 16, 2026, after commit `d0d5642`; each section below keeps the original description (line
 numbers as before the fix) and ends with a **Fixed** paragraph giving the change and how it was verified. Regression
-tests: [tests/test_paper_bugs.py](../tests/test_paper_bugs.py) (10 of its 13 tests fail on the pre-fix code).
+tests: [tests/test_paper_bugs.py](../tests/test_paper_bugs.py) (11 of its 14 tests fail on the pre-fix code).
 
 The envelope errors F1 and F2 were in the code up to commit `4db1cc9` and were fixed in `66a908d`. Wavelet runs 1 and 2
 ([WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md))
@@ -164,7 +165,7 @@ At the pack-2 values (sin b_M −0.0966, l_M −1.626, s1 0.0416, s2 0.1384, sin
 
 ---
 
-## Code bugs B1–B6 (fixed Oct 16, 2026)
+## Code bugs B1–B7 (fixed Oct 16, 2026)
 
 Line numbers in the descriptions refer to the code before the fix (commit `d0d5642`); the **Fixed**
 paragraphs give the current ones.
@@ -433,6 +434,30 @@ Verified:
 
 ---
 
+### B7. Point-source chunk average: wrong phase in one A² − E² term
+
+`envelopes_time_average` in [average_envelope_num.py](../bahamas/psd_response/average_envelope_num.py) is the
+chunk-averaged envelope of a point source, summed over a sky grid with galaxy-model weights by `galactic_DWD_num`
+([psd_galaxy.py:391](../bahamas/psd_strain/psd_galaxy.py#L391)). Found while checking B6; it is not in either paper's
+pipeline (`galactic_DWD_time` uses the Gaussian envelope).
+
+The n = 4 term of A² − E² is $h_{D;(4)}\cos(4\Delta\phi_L + 4\bar l)$ with $\Delta\phi_L = \Omega t - a$, whose average
+over $[t_1, t_2]$ is
+
+```math
+\frac{\sin(4a - 4\bar l - 4\Omega t_1) - \sin(4a - 4\bar l - 4\Omega t_2)}{4\Omega T}.
+```
+
+`FourphiNbar` already holds $4\bar l$, but line 179 used `jnp.sin(4. * (a - FourphiNbar - phit1))`, i.e.
+$\sin(4a - 16\bar l - 4\Omega t_1)$. The other terms are written correctly (e.g. `sin(3*a - FourphiNbar - 3*phit1)`).
+A² + E² is unaffected; A and E individually were off by up to 8% (30-day chunks, random sky positions).
+
+**Fixed:** [average_envelope_num.py:179](../bahamas/psd_response/average_envelope_num.py#L179) now uses
+`jnp.sin(4. * a - FourphiNbar - 4. * phit1) - jnp.sin(4. * a - FourphiNbar - 4. * phit2)`. Verified against the time
+average of the point-source envelope from `envelopes_gaussian` at zero width (divided by cos b, C1), which is itself
+checked term by term against the paper: ratios 1.000 in all 12 cases, against 0.921–1.061 before (test
+`test_point_source_time_average`). Only runs with the `galactic_DWD_num` source are affected.
+
 ## Misprints in the papers (the code is right)
 
 M1–M3 are in Klein et al. App. A.2; M4 is in Pozzoli et al. Sec. II.B.
@@ -527,9 +552,6 @@ These do not make any result wrong, but they matter when the parameters are read
 * **Data kept with unscheduled gaps.** Only stretches longer than 0.9 × `sched_period` are kept. With 3 h unscheduled
   gaps every ~10 days and a 14-day period, about 100 days per year survive, far below the 75% duty cycle. This was
   so before the B5 fix as well.
-* **`average_envelope_num.py` not verified.** Apart from B6, this point-source time average (used by
-  `galactic_DWD_num`) has not been checked against the paper. Some phases look suspicious, e.g.
-  `sin(4*(a - FourphiNbar - phit1))` multiplies `FourphiNbar`, which already contains the factor 4, by 4 again.
 
 ## Reproduce
 

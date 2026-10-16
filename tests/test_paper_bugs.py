@@ -141,3 +141,19 @@ def test_envelope_rotation(alpha0, beta0):
                                            alpha0, beta0, tdi)
         time_avg = np.trapezoid(np.array(inst) ** 2, np.array(ts)) / (t2 - t1)
         assert float(chunk) == pytest.approx(time_avg, rel=1e-6)
+
+
+def test_point_source_time_average():
+    """B7: the point-source chunk average of average_envelope_num equals the time average of the point-source
+    envelope (envelopes_gaussian at zero width, divided by cos b, convention C1)."""
+    from bahamas.psd_response.average_envelope_num import envelopes_time_average
+    rng = np.random.default_rng(2)
+    for _ in range(4):
+        b, l = rng.uniform(-1.2, 1.2), rng.uniform(0, 2 * np.pi)
+        t1 = rng.uniform(0, 300) * DAY
+        t2 = t1 + 30 * DAY
+        ts = jnp.linspace(t1, t2, 4001)
+        A, E = envelopes_gaussian(np.sin(b), l, 0., 0., 0., 1 / YEAR, ts)
+        for tdi, inst in ((0, A), (1, E)):
+            ref = np.trapezoid(np.array(inst) ** 2, np.array(ts)) / (t2 - t1) / np.cos(b)
+            assert float(envelopes_time_average(b, l, 1 / YEAR, t1, t2, tdi)) == pytest.approx(ref, rel=1e-6)
