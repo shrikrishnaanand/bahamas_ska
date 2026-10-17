@@ -1,0 +1,32 @@
+# Sky model of the needlet patch study: a smooth Galaxy plus a few compact patches of excess power.
+# All components share the galactic DWD spectrum S_gal(f); they differ only in where on the sky the power sits.
+# Positions are galactic (l, b) in degrees; fluxes are fractions of the smooth Galaxy's total flux.
+
+galaxy:                       # disk + bulge, intensity = line-of-sight integral of rho (DWD flux per solid angle)
+  R_sun: 8.12                 # kpc, Sun-Galactic centre distance
+  z_sun: 0.02                 # kpc, height of the Sun above the plane
+  R_d: 2.5                    # kpc, disk scale length,  rho_disk ~ exp(-R/R_d) exp(-|z|/z_d)
+  z_d: 0.3                    # kpc, disk scale height
+  r_b: 0.5                    # kpc, bulge scale radius, rho_bulge ~ exp(-r^2/r_b^2)
+  bulge_fraction: 0.3         # bulge share of the total mass
+  s_max: 25.0                 # kpc, line-of-sight integration limit
+
+patches:                      # Gaussian discs on the sphere, exp(-theta^2 / 2 sigma^2)
+  - name: plane
+    l: 60.0
+    b: 0.0
+    sigma: 4.0
+    flux: 0.25
+  - name: high_lat
+    l: -100.0
+    b: 45.0
+    sigma: 4.0
+    flux: 0.25
+  - name: anticentre          # near the antipode of the Galactic centre: the A/E power response is parity-even,
+    l: 180.0                  # so LISA cannot tell this patch from the same excess towards the centre
+    b: 5.0
+    sigma: 4.0
+    flux: 0.25
+
+maps:
+  nside: 32                   # sky maps and the response (1.8 deg pixels; the response has l <= 4)

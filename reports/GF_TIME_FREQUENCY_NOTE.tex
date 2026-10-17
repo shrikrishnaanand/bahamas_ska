@@ -36,7 +36,7 @@
 \newtcolorbox{remark}[1][]{colback=gray!6,colframe=gray!55,fonttitle=\bfseries,title=#1,breakable}
 \newtcolorbox{keybox}[1][]{colback=blue!4,colframe=blue!45!black,fonttitle=\bfseries,title=#1,breakable}
 
-\title{The LISA Galactic foreground in the time--frequency plane:\\ chunked Fourier and wavelet (WDM) inference,\\ a step-by-step guide}
+\title{The time-modulated LISA Galactic foreground\\ in the wavelet domain:\\ data gaps and a needlet description of the sky}
 \author{Shri Krishna Anand}
 \date{\today}
 
@@ -45,29 +45,28 @@
 
 \begin{abstract}
 \noindent
-This note explains, at the level of a master student, two ways of inferring the
-time-modulated Galactic foreground (GF) of LISA. Part~I follows the time--frequency
-(``chunked'') Fourier analysis of \Pone\ and the envelope model of \Ptwo, in the order
-in which the pipeline runs: frequency grid, spectra, orbital modulation, simulated
-data, coarse graining, Gamma likelihood and sampling. Part~II describes the
-wavelet-domain alternative implemented in \texttt{bahamas}. It explains the
-Wilson--Daubechies--Meyer (WDM) transform from scratch (pixels, critical sampling,
-the alternating sine/cosine trick and the FFT algorithm of \Cornish), models the
-modulation with a variable number of wavelet atoms sampled by reversible-jump MCMC,
-derives the Gamma likelihood of grouped pixels explicitly, and proves that it is the
-likelihood of \PoneEq{9} written in another domain. The derivation exposes a missing
-factor of two in the degrees of freedom of \PoneEq{9} and of the \texttt{bahamas}
-chunked likelihoods, and a separate bug in the \texttt{eryn} version. The aim of the
-wavelet analysis is to describe \emph{local} features in time and frequency, which is
-what is needed to handle data gaps; the last section shows what a gap does to the
-wavelet likelihood. Every equation taken from a paper is given with a link to it.
+The Galactic foreground (GF) of unresolved white-dwarf binaries is the loudest
+stochastic signal in LISA, and its power rises and falls as the constellation's
+antenna pattern sweeps across the Galaxy. This work develops a wavelet-domain
+analysis of that modulation. Part~I reviews the time--frequency (``chunked'') Fourier
+analysis of \Pone\ and the envelope model of \Ptwo. Part~II builds the
+Wilson--Daubechies--Meyer (WDM) alternative from scratch, models the modulation with a
+variable number of Gaussian atoms sampled by reversible-jump MCMC, and shows that the
+wavelet Gamma likelihood is \PoneEq{9} written in another domain; the derivation
+exposes a missing factor of two in the degrees of freedom of that equation. Part~III
+shows how data gaps are handled in the WDM domain: the damaged pixels are left out of
+the likelihood, which is exact because the pixels are independent. Part~IV introduces
+spherical needlets, a basis on the sky that is local in both position and multipole,
+and uses it to understand which features of a patchy Galaxy LISA can see. Part~V
+presents five injection studies on 30 days of simulated data: recovery of an atom
+modulation, a comparison with the chunked pipeline on the true envelope, a 1-day and
+a 10-day gap, and a Galaxy with four bright patches of excess power. Every equation
+taken from a paper is given with a link to it.
 \end{abstract}
 
 {\small
-\setcounter{tocdepth}{1}
-\begin{multicols}{2}
-\tableofcontents
-\end{multicols}}
+\setcounter{tocdepth}{0}
+\tableofcontents}
 
 %============================================================================
 \part{The chunked Fourier analysis}
@@ -774,8 +773,8 @@ gap filling in the time--frequency domain to deal with it.
 
 The broader aim here is therefore: \emph{can the Galactic foreground be analysed in
 the WDM domain as well as with chunks, and does this domain give a natural way of
-handling data gaps?} This part describes the method. Results of the injection runs
-will be added once they are redone with the corrected envelope code.
+handling data gaps?} This part describes the method; Part~III adds the treatment of
+gaps, and the injection runs are presented in Part~V.
 
 \begin{keybox}[Two different ``wavelets'']
 The word is used for two unrelated things, kept apart throughout:
@@ -1709,7 +1708,8 @@ block that only partly overlaps the gap is biased as a whole.
         a gap behaves like an end of the series, where the atom model is least
         constrained.
 \end{enumerate}
-None of this is implemented yet. Bayesian gap filling in the time--frequency domain
+Points 1, 2 and 4 are now implemented and are described in Part~III; tapering is
+not. Bayesian gap filling in the time--frequency domain
 (\href{https://arxiv.org/abs/2509.05479}{Pearson \& Cornish 2025}) is the more complete
 alternative to masking.
 
@@ -1737,10 +1737,732 @@ alternative to masking.
 \end{enumerate}
 \end{keybox}
 
-\paragraph{Status.} The injection runs (run~1: recover a modulation made of atoms;
-run~2: the true envelope, compared with the chunked model on the same data) were made
-with the envelope code before the corrections of \texttt{reports/PAPER\_BUGS.md}. They
-will be rerun, and a results section will be added here.
+\paragraph{Status.} All injection runs of Part~V use the envelope code with the
+corrections listed in \texttt{reports/PAPER\_BUGS.md}.
+
+\clearpage
+%############################################################################
+\part{Data gaps in the WDM domain}
+%############################################################################
+
+%============================================================================
+\section{Injecting a gap and masking it}\label{sec:gapmask}
+%============================================================================
+
+LISA will not deliver an uninterrupted stream. Antenna repointings, maintenance and
+unplanned events will interrupt the data for hours to days, and the planned duty
+cycle is about 75\%. \Cref{sec:gaps} showed that in the WDM domain a gap damages only
+the pixels near it. Here we turn that observation into a likelihood and test it on
+run~2's data with a short gap (run~3) and a long one (run~4).
+
+\paragraph{The gap in the data.} We take the 30-day series of run~2 (true sky envelope,
+same noise realisation) and set it to zero inside the gap:
+\begin{equation}
+  x_j(t_l) \;\to\; 0 \qquad \text{for } t_{\rm gap,1}\le t_l < t_{\rm gap,2}.
+  \label{eq:gapzero}
+\end{equation}
+Run~3 has a 1-day gap, $[12,13)$\,d (8640 samples per channel); run~4 has a 10-day
+gap, $[10,20)$\,d, a third of the window. Outside the gap the series is identical to
+run~2's, so any change in the posterior is caused by the gap alone. The zeroed series
+is then WDM-transformed as before. The gap has hard edges, the worst case for leakage.
+
+\paragraph{Which pixels are damaged.} Each WDM packet spans a few $\Delta T$, so
+pixels whose packets overlap the gap see less than their full share of data. We
+measured the bias of each pixel's power, $\langle w^2\rangle/\sigma^2$, over 20 noise
+realisations with a 1-day gap:
+\begin{itemize}
+  \item the 3 time columns that overlap the gap are 60--91\% low (the power is
+        missing);
+  \item the column just outside on each side is about 10\% low above 1\,mHz, and
+        25--40\% \emph{high} below 1\,mHz, where the step at the gap edge leaks the
+        steep low-frequency spectrum;
+  \item two columns away the bias is below about 2\%, the resolution of 20
+        realisations.
+\end{itemize}
+
+\paragraph{The mask.} We define a time mask over the WDM columns,
+\begin{equation}
+  \mu_n = \begin{cases}
+    0, & \text{column } n \text{ overlaps the gap, or is its first neighbour on either side},\\
+    1, & \text{otherwise},
+  \end{cases}
+\end{equation}
+i.e.\ the gap columns plus one buffer column (10\,h) on each side. The masked columns
+are \emph{left out} of the likelihood; they are not set to zero. A zero entering
+\cref{eq:wlik} would be read as a \emph{measured} power of zero, and would pull the
+modulation down. The mask is the same idea as \texttt{edge\_bins}: an end of the series
+is a gap that never closes.
+
+\paragraph{The masked likelihood.} A group of \cref{sec:wgroup} is a time block $s$
+(two columns) times the $r_g$ frequency rows of log bin $g$, so $\nu_g=2r_g$. With the
+mask, only the kept columns are summed:
+\begin{equation}
+  Y_{j,sg} = \sum_{n\in s}\mu_n\sum_{m\in g}w^2_{j,nm},\qquad
+  \nu_{sg} = r_g\sum_{n\in s}\mu_n,\qquad
+  \bar t_s = \frac{\sum_{n\in s}\mu_n t_n}{\sum_{n\in s}\mu_n}.
+  \label{eq:Ymask}
+\end{equation}
+A block with no kept column is dropped. A block with one kept column keeps half its
+degrees of freedom, and its modulation is evaluated at the time of that column. The
+likelihood is \cref{eq:wlik} with $\nu_g\to\nu_{sg}$ and $P_j(\bar t_s)$ at the
+masked block times. This is \emph{exact}, not an approximation: the derivation of
+\cref{sec:wgamma} needs only that the summed pixels are independent and share one
+variance, and removing pixels from a group keeps both properties. \Cref{eq:Ygamma}
+holds for any $\nu$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+ & run~3 & run~4 \\
+\midrule
+gap & 12--13\,d (24\,h) & 10--20\,d (240\,h) \\
+left out (gap + buffer) & 11.46--13.54\,d (50\,h) & 9.38--20.62\,d (270\,h) \\
+time blocks kept & 32 of 34 & 21 of 34 \\
+pixels lost & 7.4\% & 39.7\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+\Cref{fig:gapmask} shows the two set-ups in the time--frequency plane.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/run3_gap_mask.png}\\[2mm]
+\includegraphics[width=0.92\textwidth]{figures/run4_gap_mask.png}
+\caption{Where the gap is injected. Channel A, data/model per WDM pixel,
+$\log_{10}(w^2/\sigma^2)$ (white is 1). Red dashed lines: the gap, in which the time
+series is set to zero. Dark band: the columns left out of the likelihood (gap plus one
+10-h buffer column on each side). Top: run~3, 1-day gap. Bottom: run~4, 10-day gap.}
+\label{fig:gapmask}
+\end{figure}
+
+%============================================================================
+\section{What happens to the modulation inside the gap}\label{sec:gapmod}
+%============================================================================
+
+The likelihood has no terms inside the masked region, so the data say nothing about
+$P_j(t)$ there. The model, however, is defined at every time. \Cref{eq:atoms} writes
+$\ln P_j(t)$ as a sum of Gaussian atoms, a smooth function of $t$ that exists inside
+the gap whether or not there are data. Three consequences follow.
+\begin{enumerate}
+  \item \textbf{Nothing is filled in or interpolated by hand.} The sampler proposes
+        atoms exactly as without a gap; the masked likelihood scores them only on the
+        kept blocks. The atoms are pinned by the data on both sides of the gap, and
+        their values inside the gap follow from their shape.
+  \item \textbf{The prior sets how the gap is bridged.} The atom widths are
+        log-uniform in 5--60\,d, so every curve the model can draw is smooth on
+        day scales. Inside a gap the posterior contains all such curves that join the
+        two sides, and its spread is the honest uncertainty of that interpolation. It
+        is smallest at the gap edges and largest in the middle. A feature of the
+        modulation shorter than the gap could not be recovered inside it; the
+        Galactic envelope has none over 30 days.
+  \item \textbf{The spectral parameters are shared by all times.} They are measured
+        from every kept block, so a gap widens them by roughly
+        $\sqrt{1/(1-f_{\rm lost})}$, with $f_{\rm lost}$ the fraction of pixels left
+        out, independently of where the gap is.
+\end{enumerate}
+When we plot the recovered modulation we show it in two ways: with the gap left blank
+(only where it is measured), or with the posterior band continued through the gap, as
+in \cref{fig:run4mod}, where its width shows how well the atoms bridge it. The chunked
+pipeline of Part~I has no such choice: chunks are placed between gaps, and the model
+is evaluated only in them.
+
+\clearpage
+%############################################################################
+\part{Needlets and a patchy Galaxy}
+%############################################################################
+
+%============================================================================
+\section{From spherical harmonics to needlets}\label{sec:needlets}
+%============================================================================
+
+The atom model of \cref{sec:atoms} describes the modulation in \emph{time}, without
+reference to the sky. Physically, $P_j(t)$ is the Galaxy's sky distribution seen
+through LISA's rotating antenna pattern. The Gaussian Galaxy of \cref{sec:modulation}
+is a crude description of that distribution: it has no disk, no bulge, and none of the
+satellite galaxies or bar ends that host old stars. To describe the sky without
+assuming its shape, in the same spirit as the atoms in time, we need a basis of
+functions on the sphere. This section builds one.
+
+\subsection{Spherical harmonics}
+
+The spherical harmonics $Y_{\ell m}(\hat n)$, with multipole $\ell=0,1,2,\dots$ and
+$m=-\ell,\dots,\ell$, are the Fourier modes of the sphere. They are the eigenfunctions
+of the Laplacian on the sphere, $\nabla^2Y_{\ell m}=-\ell(\ell+1)Y_{\ell m}$, and are
+orthonormal and complete:
+\begin{equation}
+  \int Y_{\ell m}\,Y^*_{\ell'm'}\,\dd\Omega = \delta_{\ell\ell'}\delta_{mm'},\qquad
+  f(\hat n) = \sum_{\ell=0}^\infty\sum_{m=-\ell}^{\ell}a_{\ell m}Y_{\ell m}(\hat n),\qquad
+  a_{\ell m} = \int f\,Y^*_{\ell m}\,\dd\Omega .
+\end{equation}
+The multipole $\ell$ plays the role of frequency: a harmonic of degree $\ell$ varies on
+angular scales of about $\pi/\ell$. Summing over $m$ gives the \emph{addition
+theorem},
+\begin{equation}
+  \sum_{m=-\ell}^{\ell}Y_{\ell m}(\hat n)\,Y^*_{\ell m}(\hat n')
+  = \frac{2\ell+1}{4\pi}\,P_\ell(\hat n\cdot\hat n'),
+  \label{eq:addition}
+\end{equation}
+with $P_\ell$ the Legendre polynomial. So the projection of $f$ onto degree $\ell$ is
+$f_\ell(\hat n)=\int\frac{2\ell+1}{4\pi}P_\ell(\hat n\cdot\hat n')f(\hat n')\,\dd\Omega'$,
+a kernel that depends only on the angle between the two directions.
+
+Harmonics are perfectly localised in $\ell$, but each one covers the whole sky. A
+compact patch of a few degrees therefore needs many harmonics, and a change in one
+coefficient changes the map everywhere. The opposite basis, map pixels, is perfectly
+local on the sky but says nothing about scale. This is the same dilemma as between a
+Fourier transform and a time series in \cref{sec:wdm}, now on the sphere.
+
+\subsection{Needlets}
+
+Needlets (\href{https://doi.org/10.1137/040614359}{Narcowich, Petrushev \& Ward 2006};
+\href{https://arxiv.org/abs/0707.0844}{Marinucci et al.\ 2008}) are the sphere's
+analogue of the WDM packets: each is concentrated around one direction \emph{and} in
+a narrow range of $\ell$. They are built in three steps.
+
+\paragraph{1. Split the multipoles into bands.} Choose a base $B>1$ (we use $B=2$) and
+a smooth function $\phi(t)$ that equals 1 for $t\le1/B$, decreases smoothly ($C^\infty$)
+to 0 at $t=1$, and is 0 beyond. The window of band $j=0,1,2,\dots$ is
+\begin{equation}
+  b_j^2(\ell) = \phi\!\left(\frac{\ell}{B^{j+1}}\right) - \phi\!\left(\frac{\ell}{B^{j}}\right),
+\end{equation}
+which is non-zero only for $B^{j-1}<\ell<B^{j+1}$. A scaling band $j=-1$ with
+$b^2_{-1}(\ell)=\phi(\ell)$ collects the largest scales; for $B=2$ it is the monopole
+alone. The sum over bands telescopes:
+\begin{equation}
+  b^2_{-1}(\ell) + \sum_{j=0}^{J}b_j^2(\ell) = \phi\!\left(\frac{\ell}{B^{J+1}}\right) = 1
+  \qquad\text{for } \ell\le B^{J}.
+  \label{eq:partition}
+\end{equation}
+The windows form a smooth partition of unity in $\ell$.
+
+\paragraph{2. Build one needlet per band and direction.} For each band, take a set of
+$N_j$ directions $\xi_{jk}$ with weights $\lambda_{jk}$ (a cubature rule: the pixel
+centres of a HEALPix grid of resolution $n_{{\rm side},j}=2^j$, with
+$\lambda_{jk}=4\pi/N_j$; \href{https://arxiv.org/abs/astro-ph/0409513}{G\'orski et al.\ 2005}). The needlet is
+\begin{equation}
+  \boxed{\;\psi_{jk}(\hat n) = \sqrt{\lambda_{jk}}\sum_{\ell}b_j(\ell)\,
+  \frac{2\ell+1}{4\pi}\,P_\ell(\xi_{jk}\cdot\hat n).\;}
+  \label{eq:needlet}
+\end{equation}
+By \cref{eq:addition} it is the band-$j$ part of a delta function at $\xi_{jk}$, a bump
+centred on $\xi_{jk}$ and symmetric around it.
+
+\paragraph{3. Analysis and synthesis.} The coefficients and the reconstruction are
+\begin{equation}
+  \beta_{jk} = \int f\,\psi_{jk}\,\dd\Omega,\qquad
+  f(\hat n) = \sum_{j,k}\beta_{jk}\,\psi_{jk}(\hat n).
+  \label{eq:needletsynth}
+\end{equation}
+The second equation follows in two lines. Inserting \cref{eq:needlet} twice,
+\[
+  \sum_k\beta_{jk}\psi_{jk}(\hat n) = \sum_{\ell,\ell'}b_j(\ell)b_j(\ell')
+  \int\dd\Omega'\,f(\hat n')\sum_k\lambda_{jk}\frac{2\ell+1}{4\pi}P_\ell(\xi_{jk}\cdot\hat n')
+  \frac{2\ell'+1}{4\pi}P_{\ell'}(\xi_{jk}\cdot\hat n).
+\]
+If the cubature integrates exactly the polynomials that appear (degree up to
+$2B^{j+1}$), the sum over $k$ is the integral $\int\dd\Omega_\xi$, which by
+\cref{eq:addition} and orthogonality gives $\delta_{\ell\ell'}\frac{2\ell+1}{4\pi}
+P_\ell(\hat n'\cdot\hat n)$. Hence $\sum_k\beta_{jk}\psi_{jk}=\sum_\ell b_j^2(\ell)f_\ell$,
+and summing over $j$ with \cref{eq:partition} returns $f$.
+
+\subsection{Properties}
+
+\begin{itemize}
+  \item \textbf{Localised in $\ell$:} band $j$ contains only $B^{j-1}<\ell<B^{j+1}$
+        (exactly, by construction).
+  \item \textbf{Localised on the sky:} because $b_j$ is smooth, $\psi_{jk}$ decays
+        quasi-exponentially away from $\xi_{jk}$, over an angle of about $\pi/B^j$
+        (\href{https://doi.org/10.1137/040614359}{Narcowich et al.\ 2006}). Large $j$
+        means small, sharp needlets.
+  \item \textbf{A tight frame, not an orthonormal basis:} \cref{eq:needletsynth}
+        reconstructs any band-limited map with the \emph{same} functions for analysis and
+        synthesis, but the needlets overlap and are redundant (there are more
+        coefficients than degrees of freedom). For a prior or a sampler this is
+        harmless; it means a map has more than one set of coefficients.
+  \item \textbf{No preferred direction:} every needlet is axisymmetric about its
+        centre, and the construction needs no coordinate patch, unlike wavelets on a
+        flat projection of the sky.
+  \item \textbf{Nearly uncorrelated coefficients} for an isotropic random field at high
+        $j$ (\href{https://doi.org/10.1214/08-AOS601}{Baldi et al.\ 2009}).
+\end{itemize}
+With $B=2$ and our cubature the bands are:
+\begin{center}
+\small
+\begin{tabular}{@{}cccc@{}}
+\toprule
+band $j$ & multipoles $\ell$ & $n_{{\rm side},j}$ & number of needlets \\
+\midrule
+$-1$ & 0 & --- & 1 \\
+0 & 1 & 1 & 12 \\
+1 & 2, 3 & 2 & 48 \\
+2 & 3--7 ($\ell=4$ at full weight) & 4 & 192 \\
+3 & 5--15 & 8 & 768 \\
+\bottomrule
+\end{tabular}
+\end{center}
+This coarse cubature reconstructs a band-limited map to 3.7\% (0.6\% with twice
+$n_{{\rm side},j}$), enough for a parametrisation.
+
+\subsection{Why needlets for the Galactic foreground}\label{sec:whyneedlets}
+
+\paragraph{LISA sees only $\ell=0,2,4$.} In the low-frequency limit the power response
+of channel $j$ to a source in direction $\hat n$, averaged over polarisation, is
+$R_j(t,\hat n)=F_{+,j}^2+F_{\times,j}^2$. Each antenna pattern
+$F_{A}=D_{ab}(t)\,e^A_{ab}(\hat n)$ contracts the detector tensor $D_{ab}$ with a
+polarisation tensor, and the polarisation sum
+$\sum_A e^A_{ab}e^A_{cd}$ is built from the projector $\delta_{ab}-\hat n_a\hat n_b$: a
+polynomial of degree 4 in the components of $\hat n$, even under $\hat n\to-\hat n$. A
+polynomial of degree 4 contains only harmonics with $\ell\le4$, and an even one only even
+$\ell$. Therefore
+\begin{equation}
+  R_j(t,\hat n) = \sum_{\ell\in\{0,2,4\}}\sum_m r_{j,\ell m}(t)\,Y_{\ell m}(\hat n),
+\end{equation}
+which we confirmed numerically on the first-principles response (power at other $\ell$
+below $10^{-8}$). Since $P_j(t)\propto\int I(\hat n)R_j(t,\hat n)\,\dd\Omega$, the data
+see only the projection of the sky onto these $1+5+9=15$ real harmonics. Everything
+else in the map, including the sharp edges of any patch, is invisible to an A/E
+auto-power analysis.
+
+\paragraph{Only three bands matter.} Expanding the sky in needlets makes $P_j(t)$
+linear in the coefficients,
+\begin{equation}
+  P_j(t) = \sum_{j',k}\beta_{j'k}\,T_{j,j'k}(t),\qquad
+  T_{j,j'k}(t) = \frac{\kappa}{\bar R}\int\psi_{j'k}(\hat n)\,R_j(t,\hat n)\,\dd\Omega,
+  \label{eq:needletP}
+\end{equation}
+($\kappa$ and $\bar R$ are fixed normalisations, \cref{sec:patchsim}). $T$ vanishes
+for every band without $\ell=0,2,4$ content: $j=0$ ($\ell=1$) and $j\ge3$
+($\ell\ge5$). Only bands $j=-1,1,2$ remain, $1+48+192=241$ coefficients. A Fisher
+analysis of 30 days gives them 70\%, 29\% and 1.4\% of the information on the sky,
+and it constrains only about 5 independent sky patterns.
+
+\paragraph{Why not harmonics or pixels directly?} Fifteen harmonics would describe what
+the data see, but each covers the whole sky, so a prior that says ``the excess is
+compact'' cannot be written in them. Pixels allow such a prior, but most pixel
+combinations are invisible and the visible ones are not separated from the rest.
+Needlets do both: their bands separate visible from invisible scales exactly, and
+within a band they are local, so a patch is described by a few nearby coefficients and
+the prior can be set per band (for instance $\beta_{jk}\sim\mathcal N(0,s_j^2)$ with
+$s_j$ the spread of the smooth Galaxy's own coefficients in that band). Over a year,
+LISA's orientation sweeps through 360\textdegree, the response mixes the visible modes
+differently with time, and this band-by-band bookkeeping is what lets the model grow
+with the data.
+
+%============================================================================
+\section{Simulating a Galaxy with patches of excess power}\label{sec:patchsim}
+%============================================================================
+
+\paragraph{One spectrum, many places.} All Galactic power comes from unresolved
+double white dwarfs with the common spectrum $S^{\rm GF}(f)$ of \cref{eq:sgf}. The
+components of the sky differ only in \emph{where} the power sits. The sky is a HEALPix
+map $I(\hat n)$ of flux per pixel ($n_{\rm side}=64$, 0.9\textdegree\ pixels), and the
+modulation is linear in it:
+\begin{equation}
+  P_j(t) = \frac{\kappa}{\bar R}\sum_{\rm pix}I({\rm pix})\,R_j(t,{\rm pix}),\qquad
+  R_j = F_{+,j}^2+F_{\times,j}^2 .
+  \label{eq:Pmap}
+\end{equation}
+$R_j$ is computed from first principles: arm unit vectors from the \texttt{bahamas}
+spacecraft orbit, Michelson responses $X,Y,Z$, and then
+$A=(Z-X)/\sqrt2$, $E=(X-2Y+Z)/\sqrt6$. $\bar R$ is the all-sky mean of $R_A$, so an
+isotropic sky of unit flux gives $P_A=P_E=1$. Because $R_j$ has only $\ell\le4$, the
+map can be degraded to $n_{\rm side}=32$ for this sum without any loss.
+
+\paragraph{The smooth Galaxy} is run~2's: the bivariate Gaussian of
+\cref{sec:modulation} in ecliptic $(\beta,\lambda)$ with the pack-2 sky parameters,
+written out pixel by pixel. Since the envelope formula integrates $p(\beta,\lambda)$ with
+the measure $\cos\beta\,\dd\beta\,\dd\lambda$, the flux per pixel is
+$p(\beta,\lambda)\,\Delta\Omega$, normalised to a total of 1. The constant $\kappa$ is
+fitted once so that this map reproduces run~2's analytic $M_j^2(t)$; it does so to
+0.1\% (A) and 0.2\% (E) over the 30 days. The smooth part of the run-5 sky is
+therefore exactly run~2's injection, at the same amplitude.
+
+\paragraph{Patches.} Each patch $i$ is an elliptical Gaussian on the sphere centred on
+galactic $(l_i,b_i)$. For a pixel at angular distance $\theta$ from the centre and
+position angle $\varphi$ (from galactic north towards increasing $l$),
+\begin{equation}
+  I_i(\hat n) = F_i\,\frac{G_i(\hat n)}{\sum_{\rm pix}G_i},\qquad
+  G_i = \exp\!\left[-\frac12\left(\frac{\theta\cos(\varphi-\varphi_i)}{\sigma_{{\rm maj},i}}\right)^2
+  -\frac12\left(\frac{\theta\sin(\varphi-\varphi_i)}{\sigma_{{\rm min},i}}\right)^2\right],
+  \label{eq:patch}
+\end{equation}
+with widths $\sigma_{\rm maj}$, $\sigma_{\rm min}$ along and across the major axis,
+orientation $\varphi_i$, and $F_i$ the patch's flux in units of the smooth Galaxy's.
+The full sky is $I=I_{\rm gal}+\sum_iI_i$, and by \cref{eq:Pmap}
+\begin{equation}
+  P_j(t) = T_{j,{\rm gal}}(t) + \sum_i F_i\,T_{j,i}(t),
+  \label{eq:Ptemplates}
+\end{equation}
+where $T_{j,i}$ is the modulation produced by patch $i$ per unit flux. The time series
+is then simulated exactly as in \cref{eq:xt}, $x_j=n_j+\sqrt{P_j(t)}\,g_j$, with the
+same seed as run~2: with the patches switched off, the series equals run~2's to
+$3\times10^{-5}$.
+
+We place four patches where old stars, and hence white-dwarf binaries, are known to
+concentrate:
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{@{}lcccp{0.36\textwidth}@{}}
+\toprule
+patch & $(l,b)$ & $\sigma_{\rm maj}\times\sigma_{\rm min}$ & $F_i$ & why \\
+\midrule
+LMC & $(280.5^\circ,-32.9^\circ)$ & $3.0^\circ\times2.2^\circ$ & 0.20 & largest satellite galaxy \\
+SMC & $(302.8^\circ,-44.3^\circ)$ & $1.6^\circ\times1.0^\circ$ & 0.08 & 20\textdegree\ from the LMC: two patches that blend at low $\ell$ \\
+Sgr dSph & $(5.6^\circ,-14.2^\circ)$ & $4.0^\circ\times1.5^\circ$ & 0.12 & on top of the smooth Galaxy, elongated across the plane \\
+bar end & $(27^\circ,0^\circ)$ & $6.0^\circ\times1.5^\circ$ & 0.12 & in-plane overdensity that the Gaussian lacks \\
+\bottomrule
+\end{tabular}
+\end{center}
+The fluxes are deliberately exaggerated. With the same number of binaries per stellar
+mass, the realistic flux fraction is $M/d^2$ relative to the Milky Way: about
+$6\times10^{-4}$ for the LMC and below $10^{-4}$ for the SMC and Sgr, hundreds to
+thousands of times below what 30 days can detect. Over the 30 days the patches add
+85\% (A) and 56\% (E) to the mean Galactic power; the largest single contribution is
+the LMC's (+41\% in A, +28\% in E). Each patch sits at a different place in the
+antenna pattern, so it adds a different, time-dependent amount to A and to E. That
+difference is the only handle the data have on where a patch is.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/run5_sky.png}
+\caption{The run-5 sky in galactic coordinates. Top: smooth Galaxy (run~2's Gaussian)
+plus the four patches, log scale. Bottom left: the patches alone. Bottom right: the
+part of the patches LISA's A/E auto-power can see, their projection onto
+$\ell=0,2,4$; it holds only 3.5\% of the excess map's power, spread into lobes tens of
+degrees wide, and mirrored at the antipodes because the response is even.}
+\label{fig:sky}
+\end{figure}
+
+%============================================================================
+\section{Run 5a: patch fluxes at known positions, and the role of needlets}\label{sec:run5a}
+%============================================================================
+
+The plan for run~5 has three steps of increasing freedom: (a) fit the patch fluxes
+with positions and shapes known; (b) free the positions; (c) replace the patches by
+needlet coefficients in bands $j=-1,1,2$ with a Gaussian prior per band. Only (a) has
+been run so far.
+
+\paragraph{The 5a model.} The modulation is \cref{eq:Ptemplates}, with
+$T_{j,{\rm gal}}$ fixed at the truth and the patch templates $T_{j,i}$ at their true
+positions and shapes. The free parameters are the seven spectral parameters and the
+four fluxes $F_i\sim U(0,1)$. The data, the WDM pixels and the Gamma likelihood are
+those of runs~1--4; only the model of $P_j(t)$ changes. This is the \emph{best case}
+for any sky model: everything about the sky is known except how bright each patch is.
+Because the four templates are strongly correlated (below), the posterior is sampled
+with NUTS in whitened coordinates: each parameter is mapped from its uniform prior
+range to the real line with a logit, and then rotated and scaled with the curvature
+of the log-posterior at the truth. Plain NUTS reached its maximum tree depth.
+
+\paragraph{What the needlets explain.} Run~5a does not sample needlets, but the
+needlet picture of \cref{sec:whyneedlets} is what explains its result and sets its
+place in the plan.
+\begin{itemize}
+  \item \emph{Only $\ell\le4$ is seen.} A 3\textdegree\ patch enters the data only
+        through its $\ell=0,2,4$ projection (\cref{fig:sky}, bottom right), and every
+        $T_{j,i}(t)$ is a combination of the same 15 harmonic responses. Over 30 days
+        these change little, and each template is a smooth, nearly quadratic curve.
+        The templates of different patches, and of the Galaxy, overlap by 79--99\%
+        (cosine similarity of the stacked A and E curves). The data can therefore
+        measure the total excess well but not how it is split between patches.
+  \item \emph{5a is a constrained needlet model.} Each patch map has needlet
+        coefficients $\beta^{(i)}_{jk}$, so \cref{eq:Ptemplates} is \cref{eq:needletP}
+        with $\beta=\beta^{\rm gal}+\sum_iF_i\beta^{(i)}$: the 241 visible coefficients
+        restricted to move along four known directions. Run~5c will free all 241. It
+        cannot do better than 5a on the fluxes, so 5a is the benchmark it will be
+        compared with.
+  \item \emph{Positions are hard.} In the low-frequency limit $R_A+R_E$ depends only on
+        the angle between $\hat n$ and the normal to the constellation plane, which
+        turns by only about 30\textdegree\ in 30 days. A noise-free scan shows that a
+        patch can be moved to any position at the same angle from the normal (a ring
+        on the sky) at almost no cost. This is what run~5b will meet, and why a year
+        of data, over which the normal precesses through 360\textdegree, is needed to
+        localise anything.
+\end{itemize}
+
+\clearpage
+%############################################################################
+\part{Results}
+%############################################################################
+
+All runs use 30.00 days of simulated A and E data at $\dd t=10$\,s, TDI generation 1,
+seed 2026, simulated with two extra days at each end and cut (non-periodic ends). The
+WDM grid has $N_f=3600$ (72 pixels of 10\,h); the likelihood drops two edge columns at
+each end and uses 34 blocks of 20\,h $\times$ 174 log-frequency groups in
+0.1--29\,mHz. The atom runs use \texttt{eryn} with 32 walkers $\times$ 4 temperatures,
+2000 burn-in and 6000 stored steps, starting from $K_j=0$ (\cref{sec:rj}). Every run
+is converged: autocorrelation times are at most 8 steps (ESS $\ge24{,}000$) for all
+spectral parameters, $K_j$, $\log\mathcal L$ and $P_j(t)$ at several days.
+
+The atom model's \texttt{amp} absorbs the level $b_A$ and trades against the spectral
+shape, so it is not compared directly. The modulation is compared through the
+\emph{galactic brightness}: for each posterior sample, its amplitude times its
+spectral shape (averaged over frequency with the weight of where the Galaxy dominates)
+times $P_j(t)$, divided by the injected one. This is the quantity the data constrain.
+
+%============================================================================
+\section{Run 1: recovering a modulation made of atoms}
+%============================================================================
+
+\paragraph{Set-up.} The injected modulation is the least-squares atom fit to the
+true envelope (\cref{sec:atoms}): two atoms in A, one in E, each wider than 23\,d
+(\cref{fig:run1inj}). The model can therefore represent the injection exactly.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/run1_injection.png}
+\caption{Run~1 injection. Top: the injected $P_j(t)$ built from atoms (black) on top
+of the true envelope (grey); grey bands are the dropped edge columns. Bottom: the
+individual atoms $a_k\psi((t-t_k)/\tau_k)$ in $\ln P$ and their sum, over a range wider
+than the data span (white) to show that the atoms extend beyond it.}
+\label{fig:run1inj}
+\end{figure}
+
+\paragraph{Results.} All eight spectral parameters are recovered within their 90\%
+intervals, with every $|z|\le1.3$ (\cref{fig:run1corner}). Starting from $K_j=0$, every
+walker finds the modulation within about 50 steps, and $K_j=0$ is never visited
+afterwards: the modulation is detected decisively. The number of atoms, however, is
+not identifiable: $p(K_A=1)=0.43$ against $p(K_A=2)=0.45$, and similarly in E. Over
+30 days the envelope is smooth, and one or two wide atoms draw the same curve. The
+single E atom is recovered (centre 7.4\,d inside $[3.6,10.6]$\,d at 90\%); the two A
+atoms individually are not. What matters, the galactic brightness, is recovered to
+within $\pm1.5\%$ in both channels, with a 90\% band 5.5--5.7\% wide. The one
+excursion is A at day~0 (+8\%), where the data would like an atom centre before the
+start of the window, which the prior forbids.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/run1_corner.png}
+\caption{Run~1: posterior of the spectral parameters and \texttt{level\_E}; orange
+lines are the injected values. The double peak in \texttt{amp} is the trade-off with
+the spectral shape and with the atoms.}
+\label{fig:run1corner}
+\end{figure}
+
+%============================================================================
+\section{Run 2: the true envelope, wavelets against chunks}
+%============================================================================
+
+\paragraph{Set-up.} The Galactic foreground is modulated by the true sky envelope
+$M_j^2(t)$, which no finite set of atoms represents exactly. The \emph{same} series is
+analysed with the wavelet RJMCMC (free atoms) and with the chunked pipeline of
+Part~I (two 15-day chunks with a 5\% Tukey taper, 1000 log bins, the 5-parameter sky
+envelope, \texttt{nessai}). The chunked likelihood is run twice: with the paper's
+shape $n_b/2$ and with the correct $n_b$ (\cref{sec:dofbug}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/run2_modulation.png}
+\caption{Run~2: recovered $P_j(t)$ on the injected scale, chunked pipeline with the
+correct degrees of freedom (orange) and wavelet RJMCMC (blue), 90\% bands; dashed: the
+injected envelope. Bottom: recovered/injected $-1$. The dotted line marks the
+boundary between the two chunks.}
+\label{fig:run2mod}
+\end{figure}
+
+\paragraph{Results.}
+\begin{itemize}
+  \item \textbf{Spectral parameters} (\cref{fig:run2corner}): the three posteriors agree
+        on the medians (same data), all $|z|\le1.35$. The wavelet widths are 1.00--1.13
+        times those of the corrected chunked run. With the paper's shape $n_b/2$ the
+        chunked widths are 1.34--1.43 $\approx\sqrt2$ larger, as \cref{sec:dofbug}
+        predicts.
+  \item \textbf{Galactic brightness} (\cref{fig:run2mod}): 90\% bands of 5.8\% (A) and
+        5.2\% (E) for the wavelet model, against 4.8\% and 4.6\% for the corrected
+        chunked model, i.e.\ 12--20\% wider. The difference sits mostly at the ends of
+        the window, where the wavelet model has fewer pixels and the atoms
+        extrapolate; in the middle the widths are close.
+  \item \textbf{Time dependence alone} (each draw divided by its own 30-day mean): the
+        wavelet bands are 1.3--1.5 times wider. The sky model ties both channels to
+        five parameters, while free atoms fit each channel's shape on its own. This is
+        the price of not assuming the Galaxy's shape.
+\end{itemize}
+The chunked sky parameters are all within 1.4$\sigma$ of the truth but broad
+($\sin\psi\in[-0.95,-0.52]$ at 90\%): 30 days constrain the envelope's shape, not each
+sky parameter.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\textwidth]{figures/run2_corner.png}
+\caption{Run~2: spectral parameters shared by both models. Grey dashed: chunked
+pipeline with the paper's degrees of freedom; orange: chunked with the correct ones;
+blue: wavelet RJMCMC. Black lines: injected values.}
+\label{fig:run2corner}
+\end{figure}
+
+%============================================================================
+\section{Runs 3 and 4: a one-day and a ten-day gap}
+%============================================================================
+
+\paragraph{Set-up.} Run~2's series with a 1-day (run~3) or 10-day (run~4) gap,
+masked as in \cref{sec:gapmask} (\cref{fig:gapmask}). The sampler, priors and seeds are
+those of run~2, so the comparison with run~2's wavelet posterior isolates the effect
+of the gap.
+
+\paragraph{Spectral parameters} (\cref{fig:gapcorner}). The 1-day gap widens them by
+0--8\%, the 10-day gap by 11--32\%. The expectation from the lost pixels,
+$\sqrt{1/(1-f_{\rm lost})}$, is 4\% and 29\%. All medians stay within 0.7$\sigma$ of
+run~2's.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{figures/run3_corner.png}\hfill
+\includegraphics[width=0.49\textwidth]{figures/run4_corner.png}
+\caption{Spectral posteriors with a gap (orange dashed) against run~2 without a gap
+(blue). Left: run~3, 1-day gap. Right: run~4, 10-day gap. Black lines: injected
+values.}
+\label{fig:gapcorner}
+\end{figure}
+
+\paragraph{The modulation through the gap.} As explained in \cref{sec:gapmod}, the
+atoms define $P_j(t)$ inside the gap without any data there.
+\begin{itemize}
+  \item \textbf{1-day gap:} the band widens only locally, by 0.3--0.4 percentage
+        points (from 5.9 to 6.2\% in A, 5.4 to 5.8\% in E), and the median follows
+        run~2's within 0.5\%. Atoms 20--35\,d wide bridge 50\,h with almost no extra
+        freedom.
+  \item \textbf{10-day gap} (\cref{fig:run4mod}): the band grows steadily into the gap
+        and peaks in its middle, at 14.5\% (A) and 12.9\% (E) against 5.8\% and 5.3\%
+        without the gap, about 2.5 times wider. The median follows run~2's within 1\%,
+        and the truth stays inside the 90\% band throughout the gap in both channels.
+        The kept data widen slightly too (6.1 to 7.5\% in A over 3--27\,d), because the
+        shared spectral parameters are less well measured.
+\end{itemize}
+Neither gap introduces a bias. A gap costs what the missing data account for, plus an
+interpolation uncertainty inside the gap that the posterior reports honestly.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/run4_modulation.png}
+\caption{Run~4: galactic brightness recovered/injected $-1$ with the 10-day gap
+(orange) and without it (run~2, blue). Grey: the columns left out of the likelihood;
+red dashed: the gap. Inside the grey region the curve is the atom model continued
+through the gap, constrained only by the data on either side. Bottom: width of the
+90\% band.}
+\label{fig:run4mod}
+\end{figure}
+
+%============================================================================
+\section{Run 5: a Galaxy with four bright patches}
+%============================================================================
+
+\paragraph{Set-up.} The sky of \cref{sec:patchsim} (\cref{fig:sky}), analysed on the
+same WDM pixels with two models of $P_j(t)$: the atoms in time of runs~1--4, and the
+5a patch fit of \cref{sec:run5a}.
+
+\paragraph{The total modulation} (\cref{fig:run5corner}). Both models recover the
+30-day mean galactic brightness to within 1.5\% in A and 1.2\% in E, with the same
+90\% width (3.2\%). The spectral parameters agree, with width ratios 5a/atoms of
+0.88--1.06. Along time, the 5a band is somewhat narrower (4.2--4.3\% against
+4.9--5.6\%), as expected from a model that knows the sky. Even a large departure from
+the Gaussian Galaxy (+85\% of power in A) is therefore absorbed by the atoms without
+bias: they describe $P_j(t)$, whatever its origin.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/run5_corner.png}
+\caption{Run~5: atoms in time (blue) and the 5a patch fit at known positions (orange)
+on the same data, for the shared spectral parameters and the 30-day mean galactic
+brightness in A and E (recovered/injected). Black lines: injected values.}
+\label{fig:run5corner}
+\end{figure}
+
+\paragraph{The individual patches.} Detection significance is the posterior median
+over its standard deviation:
+\begin{center}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+patch & true $F_i$ & median & 90\% interval & median/std & (median$-$truth)/std \\
+\midrule
+LMC & 0.20 & 0.133 & [0.013, 0.331] & 1.4 & $-0.69$ \\
+SMC & 0.08 & 0.118 & [0.047, 0.181] & 2.9 & $+0.92$ \\
+Sgr dSph & 0.12 & 0.227 & [0.055, 0.434] & 1.9 & $+0.92$ \\
+bar end & 0.12 & 0.200 & [0.122, 0.274] & 4.3 & $+1.71$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+All four fluxes are consistent with the truth, but only the bar end, the one patch in
+the plane and away from the centre, is clearly detected. The fluxes are strongly
+anticorrelated (LMC with the others, $-0.6$ to $-0.75$). The reason is the template
+overlap of \cref{sec:run5a}: alone, each flux would be measured to 0.02--0.07; with all
+four free, the errors grow two to four times. The data measure about two flux
+combinations well (errors 0.020 and 0.025) and the other two poorly (0.07 and 0.25).
+\emph{Even in the best case, 30 days measure how much excess there is, not where it
+comes from.}
+
+\clearpage
+%############################################################################
+\part{Conclusions and outlook}
+%############################################################################
+
+\section{Conclusions}
+
+\begin{itemize}
+  \item \textbf{The WDM likelihood is the chunked likelihood in another domain.} The
+        Gamma likelihood of grouped WDM pixels is \PoneEq{9} applied to wavelet
+        periodograms, with 20-h time blocks in place of chunks. The derivation shows
+        that \PoneEq{9} (and the chunked samplers of \texttt{bahamas}) uses half the
+        correct degrees of freedom, which makes chunked posteriors $\sqrt2$ too wide.
+  \item \textbf{A free modulation is recovered without bias.} Gaussian atoms with a
+        variable number, sampled by reversible jump, recover the galactic brightness to
+        1--2\% with 5--6\% bands over 30 days, both for an atom injection and for the
+        true sky envelope. The number of atoms is not identifiable, and need not be.
+  \item \textbf{Its price is modest.} Against the 5-parameter sky model on the same
+        data, the wavelet brightness bands are 12--20\% wider and the time dependence
+        alone 1.3--1.5 times wider, mostly at the ends of the window. The spectral
+        parameters are measured equally well.
+  \item \textbf{Gaps are handled exactly by masking.} Leaving out the gap columns and
+        one buffer column per side keeps the likelihood exact. A 1-day gap costs almost
+        nothing; a 10-day gap widens the spectral parameters as the lost data predict
+        and the modulation band inside the gap by 2.5 times, without bias.
+  \item \textbf{The sky is seen only through $\ell=0,2,4$.} A patchy Galaxy changes
+        $P_j(t)$ strongly, and the atoms absorb it without bias. Even with positions
+        known, the fluxes of individual patches are barely separable in 30 days.
+        Needlets make the reason explicit and reduce a sky model to 241 coefficients in
+        three bands.
+\end{itemize}
+
+\section{Discussion and next steps}
+
+\paragraph{From 30 days to four years.} Everything above uses 30 days, over which the
+envelope is a smooth, nearly quadratic curve and the constellation normal turns by
+only about 30\textdegree. The next step is to apply the pipeline to four years of mock
+LISA data. Over that span the modulation goes through eight cycles, the atom model
+must describe a periodic signal with many more atoms, and the sky model gains the most:
+as the normal precesses through 360\textdegree, the ring degeneracy of patch positions
+should break, and the needlet coefficients in bands $j=1,2$ should become measurable.
+The likelihood scales linearly with the number of time blocks and should remain
+cheap; we expect the transdimensional sampling to be the bottleneck. Runs~5b (free positions) and 5c
+(needlet coefficients) will be done on both time scales.
+
+\paragraph{Better handling of gaps.} Runs~3 and 4 place one hard-edged gap in the
+middle of the window. Open tests are: the realistic LISA gap pattern (short scheduled
+gaps every two weeks plus random unscheduled ones, a 75\% duty cycle); a long gap at
+the start or end of the window, where the atoms extrapolate instead of interpolate;
+tapered gap edges, which should remove the low-frequency leakage and shrink the
+buffer; letting atom centres lie outside the window, which should cure the excess at
+the window ends seen in every run; and the chunked pipeline on the same gapped data,
+where a short gap can cost most of a chunk.
+
+\paragraph{Comparison with CTMCMC.} The number of atoms (and later of sky
+components) is sampled here with birth--death reversible-jump moves in \texttt{eryn}:
+a birth or death is proposed at discrete steps and accepted or rejected with a
+Metropolis--Hastings probability. \texttt{samsara}
+(\href{https://arxiv.org/abs/2511.07385}{Astorino et al.\ 2025}) is a continuous-time
+MCMC (CTMCMC) sampler built for the same kind of transdimensional problem, with the
+LISA global fit as its motivation. Following the birth--death process of
+\href{https://doi.org/10.1214/aos/1016120364}{Stephens (2000)}, components are born,
+die and mutate as Poisson events in continuous time. The rates are chosen so that
+detailed balance holds, and every transdimensional move is then accepted; the
+posterior is obtained by weighting each state by the time the chain spends in it. This
+removes the low acceptance of birth and death moves (0.7--1\% in our runs), which is
+the main limit on how fast the reversible-jump chain explores $K$. We plan to fit the
+atom model, and later the needlet sky model, with both samplers on the same data and
+compare the posteriors on the modulation, the mixing in $K$, and the cost per
+independent sample.
 
 %============================================================================
 \section*{References}
@@ -1796,6 +2518,27 @@ will be rerun, and a results section will be added here.
   \item J.~Goodman, J.~Weare, \emph{Ensemble samplers with affine invariance}, Commun.\
         Appl.\ Math.\ Comput.\ Sci.\ \textbf{5}, 65 (2010),
         \href{https://doi.org/10.2140/camcos.2010.5.65}{doi:10.2140/camcos.2010.5.65}.
+  \item F.~J.~Narcowich, P.~Petrushev, J.~D.~Ward, \emph{Localized tight frames on
+        spheres}, SIAM J.\ Math.\ Anal.\ \textbf{38}, 574 (2006),
+        \href{https://doi.org/10.1137/040614359}{doi:10.1137/040614359}.
+  \item D.~Marinucci et al., \emph{Spherical needlets for cosmic microwave background
+        data analysis}, MNRAS \textbf{383}, 539 (2008),
+        \href{https://arxiv.org/abs/0707.0844}{arXiv:0707.0844}.
+  \item P.~Baldi, G.~Kerkyacharian, D.~Marinucci, D.~Picard, \emph{Asymptotics for
+        spherical needlets}, Ann.\ Statist.\ \textbf{37}, 1150 (2009),
+        \href{https://doi.org/10.1214/08-AOS601}{doi:10.1214/08-AOS601}.
+  \item K.~M.~G\'orski et al., \emph{HEALPix: a framework for high-resolution
+        discretization and fast analysis of data distributed on the sphere}, ApJ
+        \textbf{622}, 759 (2005),
+        \href{https://arxiv.org/abs/astro-ph/0409513}{arXiv:astro-ph/0409513}.
+  \item M.~Stephens, \emph{Bayesian analysis of mixture models with an unknown number of
+        components---an alternative to reversible jump methods}, Ann.\ Statist.\
+        \textbf{28}, 40 (2000),
+        \href{https://doi.org/10.1214/aos/1016120364}{doi:10.1214/aos/1016120364}.
+  \item G.~Astorino, L.~Valbusa Dall'Armi, R.~Buscicchio, J.~Pomper, A.~Ricciardone,
+        W.~Del Pozzo, \emph{samsara: A Continuous-Time Markov Chain Monte Carlo Sampler
+        for Trans-Dimensional Bayesian Analysis},
+        \href{https://arxiv.org/abs/2511.07385}{arXiv:2511.07385}.
 \end{itemize}
 
 \end{document}

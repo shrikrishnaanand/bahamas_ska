@@ -1,0 +1,58 @@
+# Run 5 sky: run 2's smooth Galaxy (bivariate Gaussian in ecliptic (beta, lambda), pack-2 values of sources.yaml)
+# plus a few compact patches of excess power. Every component shares the galactic DWD spectrum S_gal(f); they differ
+# only in where on the sky the power sits (sky_patches.py).
+#
+# Patches are elliptical Gaussians on the sphere at real positions (galactic l, b in degrees), with sizes of the
+# order of the real objects' stellar bodies (sigma_major, sigma_minor in degrees; pa = position angle of the major
+# axis from galactic north towards increasing l). `flux` is the patch's share of the smooth Galaxy's total flux.
+# The fluxes are exaggerated on purpose: a realistic flux fraction is M / d^2 relative to the Milky Way
+# (`mass_msun`, `dist_kpc`; sky_patches.realistic_flux), of order 1e-4 to 1e-3, far below what 30 days can see.
+
+maps:
+  nside: 64                   # sky maps (0.9 deg pixels); P(t) uses the map degraded to response_nside
+  response_nside: 32          # the A/E power response contains only l = 0, 2, 4 (needlet_patches/sky.py)
+
+milky_way:                    # reference for the realistic flux fractions only (disk + bulge, as needlet_patches)
+  mass_msun: 6.1e10           # stellar mass, Licquia & Newman 2015
+  R_sun: 8.12
+  z_sun: 0.02
+  R_d: 2.5
+  z_d: 0.3
+  r_b: 0.5
+  bulge_fraction: 0.3
+
+patches:
+  - name: LMC                 # Large Magellanic Cloud: largest satellite; DWD population studied by Keim+ 2023
+    l: 280.47
+    b: -32.89
+    sigma_major: 3.0
+    sigma_minor: 2.2
+    pa: 60.0
+    flux: 0.20
+    mass_msun: 2.7e9
+    dist_kpc: 49.6
+  - name: SMC                 # Small Magellanic Cloud: 20 deg from the LMC; blends with it at low l
+    l: 302.80
+    b: -44.30
+    sigma_major: 1.6
+    sigma_minor: 1.0
+    pa: 45.0
+    flux: 0.08
+    mass_msun: 3.1e8
+    dist_kpc: 62.0
+  - name: Sgr dSph            # Sagittarius dwarf: core elongated almost perpendicular to the plane, 14 deg below
+    l: 5.57                   # the Galactic centre, i.e. on top of the smooth Galaxy
+    b: -14.17
+    sigma_major: 4.0
+    sigma_minor: 1.5
+    pa: 0.0
+    flux: 0.12
+    mass_msun: 1.0e8
+    dist_kpc: 26.5
+  - name: bar end             # near end of the Galactic long bar (l ~ 27 deg): an in-plane overdensity of old stars
+    l: 27.0                   # the Gaussian Galaxy does not have; no separate realistic flux
+    b: 0.0
+    sigma_major: 6.0
+    sigma_minor: 1.5
+    pa: 90.0
+    flux: 0.12

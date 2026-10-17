@@ -1,0 +1,20 @@
+# Spectra of the needlet patch study: instrument noise and the galactic DWD spectrum of the cyclo pack-2 setup
+# (paper 2, arXiv:2511.03604), as in data/wavelet_injection/config/sources.yaml.
+# The sky parameters (lat, long, s1, s2, psi) are not used: the modulation comes from the sky map (sky.py).
+# amp here is the pack-2 value; patches.py adds amp_offset so that the smooth Galaxy alone carries the same
+# 30-day mean galactic power as run 2 (our P is normalised to an isotropic sky, the pack-2 envelope is not).
+sources:
+  galactic_DWD_time:
+  - {name: alpha, injected: 1.8}
+  - {name: amp, injected: -43.94309514866353}
+  - {name: fknee, injected: -2.177}
+  - {name: fr1, injected: -2.429}
+  - {name: fr2, injected: -3.487854923626168}
+  - {name: lat, injected: -0.09664565}
+  - {name: long, injected: -1.6259238}
+  - {name: psi, injected: -0.83}
+  - {name: s1, injected: 0.04156049812924856}
+  - {name: s2, injected: 0.13842963137295858}
+  instr_noise:
+  - {name: A, injected: 2.4}
+  - {name: P, injected: 7.9}

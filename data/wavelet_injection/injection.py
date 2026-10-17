@@ -12,12 +12,15 @@ Two injections, same noise realisation (same seed), same data settings as the pa
   The wavelet model can represent this exactly: a pure recovery test.
 - ``run2`` (``injection='sky'``): the true GF envelope P_c(t) = M_c^2(t) of the pack-2 sky parameters with the
   true amplitude (``config/sources.yaml``). Used for the OG comparison.
+- ``run5`` (``injection='patches'``): run 2's Galaxy as a sky map plus four bright patches (``sky_patches.py``,
+  ``config/run5_sky.yaml``), true amplitude. Same seed as run 2, so the same noise realisation.
 
 The data are one continuous time series x_c(t) = n_c(t) + sqrt(P_c(t)) g_c(t), transformed to the WDM domain.
 Both runs are analysed with the same wavelet model and priors. Used by the notebooks in this folder; also a script::
 
     python injection.py --tag run1 --injection wavelet
     python injection.py --tag run2 --injection sky
+    python injection.py --tag run5 --injection patches
     python injection.py --tag run3 --injection sky --gap 12 13      (run 2's series with a 1-day gap)
 
 A gap (``config['gap']``: ``days`` = [start, end], ``buffer_pixels``) zeroes the series in [start, end) and removes
@@ -145,12 +148,13 @@ class Injection:
 
     ``kind='wavelet'``: reference-fit atoms (posterior ``t_frac`` convention), amp = amp_eff.
     ``kind='sky'``: M_c^2(t) of the pack-2 sky parameters, amp = true amp.
+    ``kind='patches'``: run 5's sky (smooth Galaxy + patches, ``sky_patches.Run5Sky``), amp = true amp.
     ``P_rel(t, c)`` is the injected galactic power relative to ``amp_ref`` (the posterior reference, amp_eff),
     the quantity returned by ``modulation_draws``.
     """
 
     def __init__(self, kind, ref, t0, T, shape='gaussian'):
-        if kind not in ('wavelet', 'sky'):
+        if kind not in ('wavelet', 'sky', 'patches'):
             raise ValueError(f"Unknown injection '{kind}'")
         self.kind = kind
         self.wm = WaveletModulation(t0, T, shape)
@@ -159,13 +163,19 @@ class Injection:
             self.atoms = {c: remap_atoms(a, ref['t0'], ref['T'], t0, T) for c, a in ref['atoms'].items()}
             self.levels = {'A': 0.0, 'E': ref['level_E']}
             self.amp = ref['amp']
-        else:
+        elif kind == 'sky':
             self.sky = sky_params()
+            self.amp = true_amp()
+        else:
+            import sky_patches
+            self.sky5 = sky_patches.Run5Sky(t0=t0, T=T, pad_days=CONFIG['pad_days'] + 0.5)
             self.amp = true_amp()
 
     def P(self, t, channel):
         if self.kind == 'sky':
             return power_modulation(self.sky, t, channel)
+        if self.kind == 'patches':
+            return self.sky5.P(t, channel)
         name = 'AE'[channel]
         return jnp.exp(self.wm.log_modulation(t, self.atoms[name], level=self.levels[name]))
 
@@ -192,7 +202,7 @@ def simulate_series(kind, config=CONFIG, seed=None):
         if p['name'] == 'amp':
             p['injected'] = inj.amp
     # kind='sky': the simulator builds M_c^2 from the sky parameters itself (modulation=None)
-    modulation = inj.P if kind == 'wavelet' else None
+    modulation = None if kind == 'sky' else inj.P
     pad = int(round(config['pad_days'] * DAY / dt))
     x = simulate_channels(src, N + 2 * pad, dt, wcfg['channels'], config['gen2'], t0=config['t0'] - pad * dt,
                           seed=wcfg['seed'] if seed is None else seed, modulation=modulation)[:, pad:pad + N]
@@ -368,7 +378,7 @@ if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('--tag', required=True)
-    ap.add_argument('--injection', choices=['wavelet', 'sky'], required=True)
+    ap.add_argument('--injection', choices=['wavelet', 'sky', 'patches'], required=True)
     ap.add_argument('--nsteps', type=int)
     ap.add_argument('--burnin', type=int)
     ap.add_argument('--ntemps', type=int)
