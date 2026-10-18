@@ -12,6 +12,7 @@ no external data or posteriors are used.
 | run 4 | run 2's series with a 10-day gap (10–20 d) | as run 3, for a gap a third of the window long | **done** (Oct 17) | [run4_gap.ipynb](run4_gap.ipynb) | [WAVELET_INJECTION_RUN4.md](../../reports/WAVELET_INJECTION_RUN4.md) |
 | run 5 | run 2's smooth Galaxy (as a sky map) + four bright patches (LMC, SMC, Sgr dSph, bar end); same noise as run 2 | can a sky model recover patches of excess power? | sky + atom run **done** (Oct 17) | [run5_needlet_sky.ipynb](run5_needlet_sky.ipynb) | |
 | run 5a | run 5's series | patch fluxes at known positions (NUTS) vs the atom model | **done** (Oct 17) | [run5a_known_patches.ipynb](run5a_known_patches.ipynb) | |
+| run 5c | run 5's series | the excess as a needlet map (241 coefficients, no positions) vs 5a and atoms | **done** (Oct 18) | [run5c_needlets.ipynb](run5c_needlets.ipynb) | [needlet_patches README](../needlet_patches/README.md#run-5c-the-excess-in-needlets-result) |
 
 Settings (both runs): sin ψ = −0.83 (paper 2); 30.00 d at Δt = 10 s, TDI gen 1, seed 2026, simulated with 2 extra
 days at each end and cut (non-periodic ends). Wavelet: $N_f$ = 3600 (72 pixels of 10 h), 2 edge pixels dropped at each
@@ -41,6 +42,9 @@ sky_patches.py               run 5 sky: run 2's Gaussian Galaxy as a HEALPix map
                              P_c(t) from the first-principles response of ../needlet_patches/sky.py
 patch_fit.py                 run 5a: patch fluxes at known positions + spectra, NUTS in whitened logit coordinates
                              script: python patch_fit.py   (-> outputs/run5/5a/chains.npz, ~1 h on 8 cores)
+needlet_fit.py               run 5c: the excess as needlets (bands j = -1, 1, 2), NUTS on the 11 data-visible
+                             directions + spectra, the rest drawn exactly from the prior
+                             script: python needlet_fit.py [--prior-scale 3]   (-> outputs/run5/5c/, ~35-45 min)
 likelihood_grid.py           time-frequency map of data/model per pixel and per likelihood group, galactic fraction,
                              and the effect of a 1-day gap (-> outputs/checks/likelihood_grid.png)
 diagnostics.py               convergence of a wavelet run: autocorrelation times, ESS, stuck walkers
@@ -50,6 +54,8 @@ run3_gap.ipynb               run 3 analysis: the gap, and the comparison with ru
 run4_gap.ipynb               run 4 analysis: as run 3 for the 10-day gap (loads outputs/run2, run4)
 run5_needlet_sky.ipynb       run 5: the patchy sky and its P_c(t) (-> outputs/run5/sky.png, modulation.png)
 run5a_known_patches.ipynb    run 5a: patch fit vs atoms, corners, P_c(t), flux degeneracy (loads outputs/run5, run5/5a)
+run5c_needlets.ipynb         run 5c: visible directions, brightness vs atoms and 5a, excess flux, maps
+                             (loads outputs/run5, run5/5a, run5/5c)
 outputs/
   reference/                 atoms.npz, fit.png
   checks/                    data_checks.png, data_checks.npz, dof_check.npz, likelihood_grid.png
@@ -68,6 +74,11 @@ outputs/
                              data_gap_mask.png, K_trace_burnin.png, corner_gap_vs_nogap.png, modulation_gap_vs_nogap.png,
                              shape_gap_vs_nogap.png
   run4/                      as run3/ for the 10-day gap (no k_trace.npz, no K_trace_burnin.png)
+  run5/                      timeseries.npz, data.h5, chains.npz (atoms), sky.png, modulation.png, 5a figures
+    5a/                      chains.npz (patch fit)
+    5c/                      chains.npz (needlets), chains_prior3x.npz (prior sd x 3), visible_directions_5c.png,
+                             modulation_5c.png, excess_5c_vs_5a.png, maps_5c.png; chains_v1_ycoords.npz and
+                             chains_v2_accept0.8.npz are superseded sampler settings (7% and 1.6% divergent)
 ```
 
 `chains.npz` files are about 95 MB each (atoms of every walker and step); they are not meant for git.

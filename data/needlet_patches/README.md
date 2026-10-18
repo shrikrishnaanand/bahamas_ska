@@ -8,13 +8,16 @@ few compact patches of **excess power** and ask whether a needlet description of
 |---|---|---|---|---|
 | 0 | forward model sky map → $P_c(t)$, and checks of it | **done** (Oct 12) | [stage0_forward.py](stage0_forward.py) | `outputs/stage0/` |
 | 1 | what the data can see of the sky: Fisher eigenmodes, needlet bands, patch detection and localisation, needlet reconstruction from noise-free data | **done** (Oct 12) | [stage1_identifiability.py](stage1_identifiability.py) | `outputs/stage1/` |
-| 2 | needlet fit of the noisy simulated data (sampler) | not started, see [Next](#next) | | |
+| 2 | needlet fit of the noisy simulated data (sampler) | **done** (Oct 18) as run 5c, on run 5's sky (real patch positions), see [Run 5c](#run-5c-the-excess-in-needlets-result) | [../wavelet_injection/needlet_fit.py](../wavelet_injection/needlet_fit.py) | `../wavelet_injection/outputs/run5/5c/` |
 
 **Short answer so far.** Over 30 days the data constrain about **5 sky patterns**, all with ℓ ≤ 4. Patches carrying 25%
 of the Galaxy's flux each are detected at 5–10σ, but **only if the Galaxy's shape is known**; with a free disk/bulge
 shape this falls to 0.2–3σ. Even then a patch cannot be localised: any position at the same angle from the
 constellation normal fits almost equally well. A needlet basis does not get around this. Only needlets with ℓ ≤ 4
-content (bands j = −1, 1, 2) receive any information; j = 0 and j ≥ 3 are blind.
+content (bands j = −1, 1, 2) receive any information; j = 0 and j ≥ 3 are blind. A needlet fit of noisy data with the
+spectra free ([run 5c](#run-5c-the-excess-in-needlets-result), Oct 18) recovers the total galactic modulation as well as
+any other model, but only 3 sky directions are narrowed, the excess's amount trades against the Galaxy's
+amplitude and is set by the prior, and nothing is located.
 
 ## How the excess power is simulated
 
@@ -143,9 +146,155 @@ The window $b$ is the usual smooth $C^\infty$ one. Band j covers B^(j−1) < ℓ
 The windows sum to one (tight frame). With this coarse cubature a band-limited map is reconstructed to 3.7%
 (0.6% with twice the nside_j, at four times the coefficients). That is enough for a parametrisation.
 
-**Why only a few needlets matter.** $R_c(t,\cdot)$ contains only ℓ = 0, 2, 4 (checked: power elsewhere < 10⁻⁸).
-The data therefore see only the projection of the sky onto 15 real harmonics. Needlet coefficients enter
-$P_c(t)$ through $\int \psi_{jk} R_c\thinspace d\Omega$, which is zero for j = 0 (ℓ = 1) and for j ≥ 3 (ℓ ≥ 5).
+**Reading the formula.** From the inside out:
+
+* $\frac{2\ell+1}{4\pi} P_\ell(\hat\xi\cdot\hat n)$ is all of multipole ℓ arranged symmetrically around the direction
+  $\hat\xi$. By the addition theorem it equals $`\sum_m Y_{\ell m}(\hat\xi)\thinspace Y^*_{\ell m}(\hat n)`$. Summed over
+  every ℓ with weight one, it is a delta function at $\hat\xi$.
+* The window $b(\ell/B^j)$ keeps only the band $B^{j-1} \lt \ell \lt B^{j+1}$, so the sum becomes a smooth bump about
+  180°/B^j wide, built from that band alone. This is the needlet: local on the sky **and** in ℓ, as a WDM pixel is
+  local in time and in frequency.
+* j is the scale, k the position. The centres $\hat\xi_{jk}$ are the pixel centres of a HEALPix grid with nside 2^j,
+  and $\lambda_{jk} = 4\pi/N_j$ is the area each covers.
+* The coefficients $\beta_{jk}$ of $`I = \sum_{jk} \beta_{jk}\thinspace\psi_{jk}`$ are what a fit would sample.
+
+### What the data can see of the sky (derivation)
+
+**1. Power is the sky weighted by the antenna pattern.** From the forward model above,
+
+```math
+P_c(t) = \frac{1}{\bar R}\int I(\hat n)\, R_c(t,\hat n)\, d\Omega, \qquad R_c = F_{+,c}^2 + F_{\times,c}^2 .
+```
+
+**2. The response contains only ℓ = 0, 2, 4.** At low frequency each channel is a fixed linear combination of arm
+responses, so $`F_{A,c} = D^{(c)}_{ij}\thinspace e^A_{ij}(\hat n)`$ with a detector tensor $D^{(c)}$ that does not depend
+on $\hat n$ (it changes only with the constellation's orientation, i.e. with t). The polarisation tensors
+$e^+ = \hat p\hat p - \hat q\hat q$ and $e^\times = \hat p\hat q + \hat q\hat p$ depend on the polarisation angle, but
+their sum does not:
+
+```math
+\sum_{A=+,\times} e^A_{ij}\, e^A_{kl} = \Pi_{ik}\Pi_{jl} + \Pi_{il}\Pi_{jk} - \Pi_{ij}\Pi_{kl}, \qquad \Pi_{ij} = \delta_{ij} - n_i n_j ,
+```
+
+so
+
+```math
+R_c(t,\hat n) = D^{(c)}_{ij}(t)\, D^{(c)}_{kl}(t)\,\big(\Pi_{ik}\Pi_{jl} + \Pi_{il}\Pi_{jk} - \Pi_{ij}\Pi_{kl}\big) .
+```
+
+Each $\Pi$ has terms of order 0 and 2 in $\hat n$, so $R_c$ is a polynomial of degree 4 in the components of $\hat n$
+with only even powers. On the sphere a polynomial of degree d contains multipoles ℓ = d, d − 2, …, and an even one
+contains only even ℓ. Hence ℓ ∈ {0, 2, 4}. Numerically ([sky.py](sky.py) `point_response`, stage 0): $R_A$ is 92%
+ℓ = 0, 7.5% ℓ = 2 and 0.2% ℓ = 4, with less than 10⁻⁸ of the power anywhere else. Evenness is also why a patch at
+the anticentre looks the same as one towards the centre.
+
+**3. The sky enters through 15 numbers.** Expand both in real spherical harmonics. By orthonormality the integral
+becomes a sum, and only the multipoles present in $R_c$ survive:
+
+```math
+P_c(t) = \frac{1}{\bar R}\sum_{\ell\in\{0,2,4\}}\ \sum_{m=-\ell}^{\ell} I_{\ell m}\, R_{c,\ell m}(t) .
+```
+
+The sky is seen only through its 1 + 5 + 9 = **15** coefficients $I_{\ell m}$ with ℓ = 0, 2, 4. This is a hard
+limit that holds for any amount of data: two skies with the same 15 coefficients give the same data, and any sky
+built from other multipoles gives none.
+
+**4. Thirty days measure about 5 of them.** The coefficients $R_{c,\ell m}(t)$ change only as the constellation
+turns, and over 30 days its normal turns about 30°. Each $P_c(t)$ is then close to a quadratic in t (stage 0),
+about 3 numbers per channel, about 6 for A and E. Stage 1 makes this precise with the Fisher matrix of the 15
+$I_{\ell m}$ ([Stage 1](#stage-1-identifiability-outputsstage1-fisherjson), item 1): the Galaxy's SNR in its eigenmodes is 82,
+10.3, 2.2, 2.2, 2.3, then 0.5, 0.03 and ~0, so about 5 sky patterns are measured. "About 5" counts modes with
+SNR ≳ 2. It holds the spectra at their true values, so it is optimistic. A full year turns the pattern through
+360°, so more of the 15 should become measurable.
+
+**5. Which needlets matter.** Substitute $`I = \sum \beta_{jk}\psi_{jk}`$. Each needlet's harmonic coefficients are
+$`\psi_{jk,\ell m} = \sqrt{\lambda_{jk}}\, b(\ell/B^j)\, Y_{\ell m}(\hat\xi_{jk})`$, so by step 3
+
+```math
+P_c(t) = \sum_{jk} \beta_{jk}\, T_{c,jk}(t), \qquad T_{c,jk}(t) = \frac{\sqrt{\lambda_{jk}}}{\bar R}\sum_{\ell\in\{0,2,4\}} b(\ell/B^j) \sum_m Y_{\ell m}(\hat\xi_{jk})\, R_{c,\ell m}(t) .
+```
+
+$T_{c,jk}$ vanishes unless the band's window covers ℓ = 0, 2 or 4: j = −1 (ℓ = 0), j = 1 (ℓ = 2, 3) and j = 2
+(ℓ = 3–7) do; j = 0 (ℓ = 1 only) and j ≥ 3 (ℓ ≥ 5) do not. That leaves 1 + 48 + 192 = **241** needlet coefficients,
+which still reach the data only through the same 15 combinations, of which about 5 are measured. The needlet Fisher
+matrix confirms this: 15 non-zero eigenvalues, falling by 10⁶ over the first 7 (stage 1, item 2).
+
+### Templates and needlets: one linear model
+
+Because $P_c(t)$ is linear in the sky map, any sky written as a sum of pieces, $`I = \sum_a \theta_a\thinspace p_a`$,
+gives
+
+```math
+P_c(t) = \sum_a \theta_a\, T_{c,a}(t), \qquad T_{c,a}(t) = \frac{1}{\bar R}\int p_a(\hat n)\, R_c(t,\hat n)\, d\Omega ,
+```
+
+where $T_{c,a}(t)$ is the modulation that piece a would produce on its own. Run 5a and the planned needlet fit are
+both of this form and differ only in the pieces:
+
+| model | pieces $p_a$ | coefficients $\theta_a$ | free | status |
+|---|---|---|---|---|
+| run 5a ([patch_fit.py](../wavelet_injection/patch_fit.py)) | smooth Galaxy (shape at truth, coefficient 1) and each patch with unit flux at its true position and shape | $F_i$, the patch's flux in units of the Galaxy's | 4 | done |
+| needlets (5c, [needlet_fit.py](../wavelet_injection/needlet_fit.py)) | $\psi_{jk}$ on the HEALPix grids of bands j = −1, 1, 2 | $\beta_{jk}$ | 241 | done, [below](#run-5c-the-excess-in-needlets-result) |
+
+In run 5a, $T_{c,i}(t)$ is computed once from the known patch and only the $F_i$ are sampled:
+$`P_c(t) = T_{c,\mathrm{gal}}(t) + \sum_i F_i\thinspace T_{c,i}(t)`$. A needlet fit assumes no positions, but by step 3
+any choice of pieces reaches the data only through the 15 $I_{\ell m}$. So the patch fluxes of 5a, where the
+positions are given, are the best a needlet fit could do. The wavelet atoms of runs 1–4 are not of this form: they
+model $\ln P_c(t)$ directly, separately for each channel, and say nothing about the sky.
+
+### Run 5c: the excess in needlets (result)
+
+Run 5's data (run 2's smooth Galaxy as a sky map plus LMC, SMC, Sgr dSph and the near end of the bar with 20%, 8%,
+12% and 12% of its flux; same noise as run 2; [../wavelet_injection/](../wavelet_injection/)), same WDM Gamma
+likelihood as runs 1–5a. Model: the smooth Galaxy fixed at the truth (shape and unit flux, as in 5a) plus the excess
+as needlets of bands j = −1, 1, 2 on the response grid (nside 32), with `amp` and the six other spectral parameters
+free. Prior $`\beta_{jk} \sim N(0, s_j^2)`$, $s_j$ = rms of the smooth Galaxy's own needlet coefficients in band j
+(as in stage 1, item 5), so nothing about the patches. Code: [needlet_fit.py](../wavelet_injection/needlet_fit.py);
+analysis: [run5c_needlets.ipynb](../wavelet_injection/run5c_needlets.ipynb).
+
+**Sampling, exact at low dimension.** With $z = \beta/s \sim N(0, I)$ the modulation is $T_{\mathrm{gal}} + Mz$ with
+$M = T\thinspace\mathrm{diag}(s)$. On the 34 time blocks of 30 days, $M$ has 11 singular values above $10^{-6}$ of
+the largest (the next is $3\times10^{-7}$), so the likelihood sees only $y = V_{11}^T z$. NUTS samples y and the 7
+spectral parameters; the other 230 directions of z do not enter the likelihood and are drawn from their prior. That
+is the exact posterior of the 241-coefficient model. In $(\mathrm{amp}, y)$ the two trade along a curved ridge
+(correlation 0.985) and a first run had 7% divergent transitions; sampling $q = 10^{\mathrm{amp}-\mathrm{amp}_0}\thinspace y$
+makes the ridge straight. Final run: 4 × (1000 + 2000), target acceptance 0.95, 10 divergences (0.1%),
+$\hat R \le 1.002$, $n_{\mathrm{eff}} \ge 1900$, 34 min. A second run with every $s_j$ ×3 tests the prior.
+
+| | atoms (run 5) | 5a: known positions | 5c: needlets | 5c, prior ×3 |
+|---|---|---|---|---|
+| 30-day brightness A, recovered / injected | 1.015 | 1.014 | 1.011 | |
+| 30-day brightness E | 0.990 | 0.988 | 0.992 | |
+| 90% width | 3.2% | 3.2% | 3.3% | |
+| total excess flux (truth 0.52) | – | 0.68 ± 0.12 | 0.17 ± 0.21 | 0.73 ± 0.56 |
+| amp − true | – | −0.05 dex | +0.12 dex | −0.03 dex |
+| visible directions narrowed below ½ the prior | – | – | 3 of 11 | 3 of 11 |
+| corr(posterior mean, true excess), ℓ = 0, 2, 4 parts | – | – | 0.44 | 0.69 |
+| max \|mean / sd\| on the sky | – | – | 1.1 | 0.9 |
+
+* **Total power: as good as the other models.** All three recover the 30-day galactic brightness to about 1% with
+  the same 3.2–3.4% width, and the truth is inside 5c's 90% band at every analysed time. The spectral parameters
+  agree across the three.
+* **How much excess: set by the prior.** The posterior total excess flux moves from 0.17 to 0.73 when the prior
+  widens. The Galaxy's amplitude takes up the difference: in 5c amp comes out 0.12 dex (×1.33) high,
+  anticorrelated with the excess flux (−0.72). With the Galaxy's shape known but its amplitude free, an excess
+  spread over needlets has almost the Galaxy's own time profile, so the data fix the sum and the prior sets the
+  split. 5a avoids this because the patch positions, and so their distinct time profiles, are given.
+* **How many sky directions: 3, and not by the data alone.** Of the 11 visible directions, 3 have a posterior sd
+  below half the prior (0.11, 0.23, 0.22), 2 are narrowed a little (0.80, 0.76), 6 not at all. Tripling the prior
+  widens even the best three 1.9–2.4× (data-dominated would be 1×, pure prior 3×), because they trade against amp
+  and the spectral parameters. This is lower than the "about 5" of stage 1's Fisher count (item 1), which held the
+  spectra at the truth and had no noise.
+* **Where: not located.** The posterior mean has some of the true excess's visible structure (correlation 0.44),
+  but nowhere exceeds 1.1σ, as the noise-free Wiener filter of stage 1 found (correlation 0.50, max 0.5–1.4).
+* **The prior is too narrow for compact patches.** Scaled to the smooth Galaxy, it puts the true excess at up to
+  3.5σ in single directions (compact patches carry more ℓ = 2, 4 power than a smooth Galaxy). Unmeasured directions
+  shrink to zero; one ends 3.4σ from the truth for that reason alone.
+
+**Conclusion.** In 30 days a sky model without positions recovers the total galactic modulation as well as the
+atoms or the known-position templates, but it can neither separate an excess from the Galaxy's brightness nor
+place it. What 5a measures about the patches comes from knowing where they are. The year-long Fisher calculation
+under [Next](#next) is the cheapest way to see whether 360° of response rotation changes this.
 
 ## Stage 0: forward model (`outputs/stage0/`)
 
@@ -216,16 +365,17 @@ rms of the Galaxy's own needlet coefficients in band j (no knowledge of the patc
 
 ## Next
 
-Stage 1 already answers the question for 30 days. A noisy needlet MCMC (stage 2) would reproduce it with scatter;
-it would not change it. Options, cheapest first:
+Stage 1 and run 5c answer the question for 30 days: the total modulation is measured, the excess's amount and
+position are not. Options, cheapest first:
 
 1. **Fisher for a full year.** No time series is needed: only the band-averaged spectra and the response at the
    time groups, so it costs minutes on a laptop. This would show how the ring degeneracy breaks as $\hat z$
-   precesses through 360°.
-2. **Stage 2 on the 30-day data.** Sample the excess in the Fisher eigenbasis of the visible subspace (≤ 15
-   parameters plus 5 Galaxy nuisances, with eryn), and take the null space analytically from the prior. That
-   demonstrates the stage-1 picture on noisy data at laptop cost.
-3. Brighter or more numerous patches: the SNR is linear in flux, so the table above gives the thresholds directly.
+   precesses through 360°, and how many of the 15 visible numbers a year measures.
+2. **Run 5c on a year of data**, if the Fisher count says it is worth it. The sampler already reduces the needlets to
+   their data-visible directions exactly, so the cost grows with the number of time blocks, not of needlets.
+3. **A prior matched to compact sources**, e.g. $s_j$ from a population of patches rather than the smooth Galaxy:
+   in 5c the Galaxy-scaled prior shrinks the true excess.
+4. Brighter or more numerous patches: the SNR is linear in flux, so the table above gives the thresholds directly.
 
 ## Files
 
