@@ -8,6 +8,7 @@ The function `envelopes_gaussian` computes the envelopes based on the provided p
 from bahamas.backend_context import get_backend_components
 # Load backend components after backend initialization
 jnp, jit, lax = get_backend_components()
+from bahamas import fixes
 if jnp is None:
     import numpy as jnp
 
@@ -41,6 +42,9 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     fact1b0 = jnp.exp(-0.25 * SigmaSqPlus)
     fact3b = jnp.exp(-2. * SigmaSqPlus)
     fact5b = jnp.exp(-6. * SigmaSqPlus)
+    # PAPER_BUGS.md F2: the 3b and 5b harmonics of the DphiL terms are damped too (undamped before the fix)
+    fact3bDphiL = fact3b if fixes.enabled('F2') else 1.
+    fact5bDphiL = fact5b if fixes.enabled('F2') else 1.
 
     coshHalfSigmaSqSin = jnp.cosh(0.5 * SigmaSqSin)
     sinhHalfSigmaSqSin = jnp.sinh(0.5 * SigmaSqSin)
@@ -83,7 +87,9 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     # alpha0, beta0 (Klein et al. App. A): h(b, l) = R[2 (beta0 - alpha0)] h_0(b, l - alpha0), a rotation of the
     # (h_A, h_E) signals. It leaves A^2 + E^2 unchanged and shifts the phase of A^2 - E^2 by -4 (beta0 - alpha0)
     # (PAPER_BUGS.md B6), so it enters here and not as a rotation of the envelopes.
-    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.) - 4. * (beta0 - alpha0)
+    FourphiMbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.)
+    if fixes.enabled('B6'):
+        FourphiMbar = FourphiMbar - 4. * (beta0 - alpha0)
 
     sbM = EclipticLatitude #sin Ecliptic Latitude
     cbM = jnp.sqrt(1. - sbM * sbM)
@@ -142,28 +148,31 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
 
     overall_factor = 1. / 10240.
 
+    # PAPER_BUGS.md F1: sinh in the first H_S;(3) term (cosh before the fix)
+    sinh3HalvesF1 = sinh3HalvesSigmaSqSin if fixes.enabled('F1') else cosh3HalvesSigmaSqSin
+
     # A^2 + E^2
     Sum = fact1b0 * (120636. * cbM + 7614. * fact3b * c3bM - 666. * fact5b * c5bM)
     
     
     Sum += fact1DphiL * (-31392. * (coshHalfSigmaSqSin * cDphiL * sbM + sinhHalfSigmaSqSin * sDphiL * cbM)
-                         - 32112. * fact3b * (cosh3HalvesSigmaSqSin * cDphiL * s3bM + sinh3HalvesSigmaSqSin * sDphiL * c3bM)
-                         - 720. * fact5b * (cosh5HalvesSigmaSqSin * cDphiL * s5bM + sinh5HalvesSigmaSqSin * sDphiL * c5bM))
+                         - 32112. * fact3bDphiL * (cosh3HalvesSigmaSqSin * cDphiL * s3bM + sinh3HalvesSigmaSqSin * sDphiL * c3bM)
+                         - 720. * fact5bDphiL * (cosh5HalvesSigmaSqSin * cDphiL * s5bM + sinh5HalvesSigmaSqSin * sDphiL * c5bM))
 
     
     Sum += fact2DphiL * (71280. * (coshSigmaSqSin * c2DphiL * cbM - sinhSigmaSqSin * s2DphiL * sbM)
-                         + 22680. * fact3b * (cosh3SigmaSqSin * c2DphiL * c3bM - sinh3SigmaSqSin * s2DphiL * s3bM)
-                         - 648. * fact5b * (cosh5SigmaSqSin * c2DphiL * c5bM - sinh5SigmaSqSin * s2DphiL * s5bM))
+                         + 22680. * fact3bDphiL * (cosh3SigmaSqSin * c2DphiL * c3bM - sinh3SigmaSqSin * s2DphiL * s3bM)
+                         - 648. * fact5bDphiL * (cosh5SigmaSqSin * c2DphiL * c5bM - sinh5SigmaSqSin * s2DphiL * s5bM))
 
 
-    Sum += fact3DphiL * (-864. * (cosh3HalvesSigmaSqSin * c3DphiL * sbM + sinh3HalvesSigmaSqSin * s3DphiL * cbM)
-                         - 1296. * fact3b * (cosh9HalvesSigmaSqSin * c3DphiL * s3bM + sinh9HalvesSigmaSqSin * s3DphiL * c3bM)
-                         - 432. * fact5b * (cosh15HalvesSigmaSqSin * c3DphiL * s5bM + sinh15HalvesSigmaSqSin * s3DphiL * c5bM))
+    Sum += fact3DphiL * (-864. * (cosh3HalvesSigmaSqSin * c3DphiL * sbM + sinh3HalvesF1 * s3DphiL * cbM)
+                         - 1296. * fact3bDphiL * (cosh9HalvesSigmaSqSin * c3DphiL * s3bM + sinh9HalvesSigmaSqSin * s3DphiL * c3bM)
+                         - 432. * fact5bDphiL * (cosh15HalvesSigmaSqSin * c3DphiL * s5bM + sinh15HalvesSigmaSqSin * s3DphiL * c5bM))
 
     
     Sum += fact4DphiL * (1620. * (cosh2SigmaSqSin * c4DphiL * cbM - sinh2SigmaSqSin * s4DphiL * sbM)
-                         + 810. * fact3b * (cosh6SigmaSqSin * c4DphiL * c3bM - sinh6SigmaSqSin * s4DphiL * s3bM)
-                         + 162. * fact5b * (cosh10SigmaSqSin * c4DphiL * c5bM - sinh10SigmaSqSin * s4DphiL * s5bM))
+                         + 810. * fact3bDphiL * (cosh6SigmaSqSin * c4DphiL * c3bM - sinh6SigmaSqSin * s4DphiL * s3bM)
+                         + 162. * fact5bDphiL * (cosh10SigmaSqSin * c4DphiL * c5bM - sinh10SigmaSqSin * s4DphiL * s5bM))
 
     
     Sum *= overall_factor
@@ -172,40 +181,45 @@ def envelopes_gaussian(EclipticLatitude, EclipticLongitude, Sigma1, Sigma2, sinP
     Diff = c4DphiL_4phiMbar * fact1b0 * (324. * cbM - 2430. * fact3b * c3bM - 5670. * fact5b * c5bM)
 
     Diff += fact1DphiL * (-1296. * (coshHalfSigmaSqSin * c3DphiL_4phiMbar * sbM - sinhHalfSigmaSqSin * s3DphiL_4phiMbar * cbM)
-                          + 3240. * fact3b * (cosh3HalvesSigmaSqSin * c3DphiL_4phiMbar * s3bM - sinh3HalvesSigmaSqSin * s3DphiL_4phiMbar * c3bM)
-                          + 4536. * fact5b * (cosh5HalvesSigmaSqSin * c3DphiL_4phiMbar * s5bM - sinh5HalvesSigmaSqSin * s3DphiL_4phiMbar * c5bM))
+                          + 3240. * fact3bDphiL * (cosh3HalvesSigmaSqSin * c3DphiL_4phiMbar * s3bM - sinh3HalvesSigmaSqSin * s3DphiL_4phiMbar * c3bM)
+                          + 4536. * fact5bDphiL * (cosh5HalvesSigmaSqSin * c3DphiL_4phiMbar * s5bM - sinh5HalvesSigmaSqSin * s3DphiL_4phiMbar * c5bM))
 
     Diff += fact1DphiL * (432. * (coshHalfSigmaSqSin * c5DphiL_4phiMbar * sbM + sinhHalfSigmaSqSin * s5DphiL_4phiMbar * cbM)
-                          - 1080. * fact3b * (cosh3HalvesSigmaSqSin * c5DphiL_4phiMbar * s3bM + sinh3HalvesSigmaSqSin * s5DphiL_4phiMbar * c3bM)
-                          - 1512. * fact5b * (cosh5HalvesSigmaSqSin * c5DphiL_4phiMbar * s5bM + sinh5HalvesSigmaSqSin * s5DphiL_4phiMbar * c5bM))
+                          - 1080. * fact3bDphiL * (cosh3HalvesSigmaSqSin * c5DphiL_4phiMbar * s3bM + sinh3HalvesSigmaSqSin * s5DphiL_4phiMbar * c3bM)
+                          - 1512. * fact5bDphiL * (cosh5HalvesSigmaSqSin * c5DphiL_4phiMbar * s5bM + sinh5HalvesSigmaSqSin * s5DphiL_4phiMbar * c5bM))
 
     Diff += fact2DphiL * (-1944. * (coshSigmaSqSin * c2DphiL_4phiMbar * cbM + sinhSigmaSqSin * s2DphiL_4phiMbar * sbM)
-                          + 10692. * fact3b * (cosh3SigmaSqSin * c2DphiL_4phiMbar * c3bM + sinh3SigmaSqSin * s2DphiL_4phiMbar * s3bM)
-                          + 6804. * fact5b * (cosh5SigmaSqSin * c2DphiL_4phiMbar * c5bM + sinh5SigmaSqSin * s2DphiL_4phiMbar * s5bM))
+                          + 10692. * fact3bDphiL * (cosh3SigmaSqSin * c2DphiL_4phiMbar * c3bM + sinh3SigmaSqSin * s2DphiL_4phiMbar * s3bM)
+                          + 6804. * fact5bDphiL * (cosh5SigmaSqSin * c2DphiL_4phiMbar * c5bM + sinh5SigmaSqSin * s2DphiL_4phiMbar * s5bM))
 
     Diff += fact2DphiL * (-216. * (coshSigmaSqSin * c6DphiL_4phiMbar * cbM - sinhSigmaSqSin * s6DphiL_4phiMbar * sbM)
-                          + 1188. * fact3b * (cosh3SigmaSqSin * c6DphiL_4phiMbar * c3bM - sinh3SigmaSqSin * s6DphiL_4phiMbar * s3bM)
-                          + 756. * fact5b * (cosh5SigmaSqSin * c6DphiL_4phiMbar * c5bM - sinh5SigmaSqSin * s6DphiL_4phiMbar * s5bM))
+                          + 1188. * fact3bDphiL * (cosh3SigmaSqSin * c6DphiL_4phiMbar * c3bM - sinh3SigmaSqSin * s6DphiL_4phiMbar * s3bM)
+                          + 756. * fact5bDphiL * (cosh5SigmaSqSin * c6DphiL_4phiMbar * c5bM - sinh5SigmaSqSin * s6DphiL_4phiMbar * s5bM))
 
     Diff += fact3DphiL * (-3888. * (cosh3HalvesSigmaSqSin * cDphiL_4phiMbar * sbM - sinh3HalvesSigmaSqSin * sDphiL_4phiMbar * cbM)
-                          - 5832. * fact3b * (cosh9HalvesSigmaSqSin * cDphiL_4phiMbar * s3bM - sinh9HalvesSigmaSqSin * sDphiL_4phiMbar * c3bM)
-                          - 1944. * fact5b * (cosh15HalvesSigmaSqSin * cDphiL_4phiMbar * s5bM - sinh15HalvesSigmaSqSin * sDphiL_4phiMbar * c5bM))
+                          - 5832. * fact3bDphiL * (cosh9HalvesSigmaSqSin * cDphiL_4phiMbar * s3bM - sinh9HalvesSigmaSqSin * sDphiL_4phiMbar * c3bM)
+                          - 1944. * fact5bDphiL * (cosh15HalvesSigmaSqSin * cDphiL_4phiMbar * s5bM - sinh15HalvesSigmaSqSin * sDphiL_4phiMbar * c5bM))
 
     Diff += fact3DphiL * (144. * (cosh3HalvesSigmaSqSin * c7DphiL_4phiMbar * sbM + sinh3HalvesSigmaSqSin * s7DphiL_4phiMbar * cbM)
-                          + 216. * fact3b * (cosh9HalvesSigmaSqSin * c7DphiL_4phiMbar * s3bM + sinh9HalvesSigmaSqSin * s7DphiL_4phiMbar * c3bM)
-                          + 72. * fact5b * (cosh15HalvesSigmaSqSin * c7DphiL_4phiMbar * s5bM + sinh15HalvesSigmaSqSin * s7DphiL_4phiMbar * c5bM))
+                          + 216. * fact3bDphiL * (cosh9HalvesSigmaSqSin * c7DphiL_4phiMbar * s3bM + sinh9HalvesSigmaSqSin * s7DphiL_4phiMbar * c3bM)
+                          + 72. * fact5bDphiL * (cosh15HalvesSigmaSqSin * c7DphiL_4phiMbar * s5bM + sinh15HalvesSigmaSqSin * s7DphiL_4phiMbar * c5bM))
 
     Diff += fact4DphiL * (-7290. * (cosh2SigmaSqSin * c4phiMbar * cbM + sinh2SigmaSqSin * s4phiMbar * sbM)
-                          - 3645. * fact3b * (cosh6SigmaSqSin * c4phiMbar * c3bM + sinh6SigmaSqSin * s4phiMbar * s3bM)
-                          - 729. * fact5b * (cosh10SigmaSqSin * c4phiMbar * c5bM + sinh10SigmaSqSin * s4phiMbar * s5bM))
+                          - 3645. * fact3bDphiL * (cosh6SigmaSqSin * c4phiMbar * c3bM + sinh6SigmaSqSin * s4phiMbar * s3bM)
+                          - 729. * fact5bDphiL * (cosh10SigmaSqSin * c4phiMbar * c5bM + sinh10SigmaSqSin * s4phiMbar * s5bM))
 
     Diff += fact4DphiL * (-90. * (cosh2SigmaSqSin * c8DphiL_4phiMbar * cbM - sinh2SigmaSqSin * s8DphiL_4phiMbar * sbM)
-                          - 45. * fact3b * (cosh6SigmaSqSin * c8DphiL_4phiMbar * c3bM - sinh6SigmaSqSin * s8DphiL_4phiMbar * s3bM)
-                          - 9. * fact5b * (cosh10SigmaSqSin * c8DphiL_4phiMbar * c5bM - sinh10SigmaSqSin * s8DphiL_4phiMbar * s5bM))
+                          - 45. * fact3bDphiL * (cosh6SigmaSqSin * c8DphiL_4phiMbar * c3bM - sinh6SigmaSqSin * s8DphiL_4phiMbar * s3bM)
+                          - 9. * fact5bDphiL * (cosh10SigmaSqSin * c8DphiL_4phiMbar * c5bM - sinh10SigmaSqSin * s8DphiL_4phiMbar * s5bM))
 
     Diff *= overall_factor
     A = jnp.sqrt(0.5 * jnp.abs(Sum + Diff))
     E = jnp.sqrt(0.5 * jnp.abs(Sum - Diff))
+    if not fixes.enabled('B6'):
+        # Pre-fix B6: rotation of the envelopes by 2 (beta0 - alpha0)
+        sDect = jnp.sin(2. * (beta0 - alpha0))
+        cDect = jnp.cos(2. * (beta0 - alpha0))
+        A, E = jnp.abs(cDect * A - sDect * E), jnp.abs(sDect * A + cDect * E)
 
     return A, E
 

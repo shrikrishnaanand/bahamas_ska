@@ -14,6 +14,7 @@ Dependencies:
 """
 from bahamas.psd_strain import psd_function as psd
 from bahamas.logger_config import logger
+from bahamas import fixes
 
 import numpy as np
 import jax
@@ -75,7 +76,7 @@ def whittle_lik(coords, data, freqs, response, sources, dt, t1, t2, dof, gen2, i
                 tdi=i, 
                 gen2=gen2
             )
-            # dof[j] = real Gaussian degrees of freedom per amplitude (2 for complex; 1 with legacy_dof)
+            # dof[j] = real Gaussian degrees of freedom per amplitude (2 for complex; 1 with fixes: B2: false)
             nu = dof[j]
             log_likelihood += -0.5 * np.sum(nu * ((np.abs(tdi) ** 2) / psd_model + np.log(psd_model) + np.log(2 * np.pi / nu)))
     
@@ -133,13 +134,22 @@ def gamma_lik(coords, data, freqs, response, sources, dt, t1, t2, dof, gen2, ind
                 tdi=i, 
                 gen2=gen2
             )
-            log_likelihood += jnp.sum(
-                # tdi is the averaged periodogram P_hat (a power): Gamma(shape dof/2, scale 2 S / dof)
-                (dof[j] / 2 - 1) * jnp.log(tdi)
-                - (dof[j] / 2) * jnp.log(psd_model)
-                - jsc.special.gammaln(dof[j] / 2)
-                - (dof[j] / 2) * tdi / psd_model
-            )
+            if fixes.enabled('B1'):
+                log_likelihood += jnp.sum(
+                    # tdi is the averaged periodogram P_hat (a power): Gamma(shape dof/2, scale 2 S / dof)
+                    (dof[j] / 2 - 1) * jnp.log(tdi)
+                    - (dof[j] / 2) * jnp.log(psd_model)
+                    - jsc.special.gammaln(dof[j] / 2)
+                    - (dof[j] / 2) * tdi / psd_model
+                )
+            else:
+                # Pre-fix B1: squares P_hat again and drops n_b in the data term
+                log_likelihood += jnp.sum(
+                    (dof[j] / 2 - 1) * jnp.log(jnp.abs(tdi) ** 2)
+                    - (dof[j] / 2) * jnp.log(psd_model)
+                    - jsc.special.gammaln(dof[j] / 2)
+                    - (jnp.abs(tdi) ** 2) / (2 * psd_model)
+                )
     
     return log_likelihood
 

@@ -22,6 +22,7 @@ if lax is not None:
 
 from bahamas.psd_response import average_envelope as env
 from bahamas.psd_strain import egp
+from bahamas import fixes
 
 from bahamas.psd_response.orbits import SpacecraftOrbit
 
@@ -139,6 +140,8 @@ def transfer_functions_acc(f, L, tdi=0, gen2=False):
     w = 2*jnp.pi*f*L
     Cxx = 8*jnp.sin(w)**2
     tr_acc_AE = Cxx * 4*(1 + jnp.cos(w) + jnp.cos(w)**2)  # Nam et al. 2023, Table II
+    if not fixes.enabled('B3b'):
+        tr_acc_AE = Cxx * 4*(1 + 2*jnp.cos(w))  # pre-fix B3b
     tr_acc_T = 4*Cxx * (1 - jnp.cos(w))**2
 
     if lax is not None:
@@ -203,6 +206,8 @@ def psd_AE(f, L, A=2.4, P=7.9):
     w = 2*jnp.pi*f*L
     Cxx = 8*jnp.sin(w)**2
     tr_acc = Cxx * 4*(1 + jnp.cos(w) + jnp.cos(w)**2)  # Nam et al. 2023, Table II
+    if not fixes.enabled('B3b'):
+        tr_acc = Cxx * 4*(1 + 2*jnp.cos(w))  # pre-fix B3b
     tr_oms = Cxx * (2 + jnp.cos(w))
     
     return Sacc*tr_acc + Soms*tr_oms

@@ -41,6 +41,36 @@ The envelope errors F1 and F2 were in the code up to commit `4db1cc9` and were f
 and 2 (Oct 11) used the pre-fix code. Both were redone with the fixed code on Oct 16
 ([WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md), [WAVELET_INJECTION_RUN2.md](WAVELET_INJECTION_RUN2.md)).
 
+### Turning a fix off
+
+Every fixed bug (F1, F2, B1, B2, B3b, B4, B5, B6, B7) has a switch in [bahamas/fixes.py](../bahamas/fixes.py). All are
+on by default. If a fix turns out to be wrong, set it to `false` in the config to restore the code exactly as it was
+before that fix:
+
+```yaml
+fixes:
+  F1: false   # cosh again in the first H_S;(3) term
+  B2: false   # one degree of freedom per complex amplitude (Pozzoli et al. Eqs. 3, 9 as printed)
+```
+
+* `inference: legacy_dof: true` still works and is the same as `fixes: B2: false`.
+* Unknown keys raise an error, and every switch that is off is logged as a warning.
+* Some switches act when the data are simulated (F1, F2, B3b, B4, B5, B6, B7 through the injected PSD) and some
+  when the likelihood is evaluated (all except B4, B5). Give the data and inference configs the same `fixes` section.
+* In scripts, call `fixes.configure(config)` or use `with fixes.override(F1=False): ...`.
+* B4 off restores the old `lin` binning (bins of `N // nseg` amplitudes over all frequencies, about `nseg/2` bins)
+  and the single normalisation length `TOBS`. It does not restore the `self.start` indexing error, which only made
+  gapped `lin` runs crash.
+
+Each switch, when off, was checked against the pre-fix code loaded from git (Oct 21, 2026):
+
+* F1, F2, B6, B7, B3b and B1 agree to ≤10⁻¹² (envelopes at α₀ = β₀ = 0 and ≠ 0, noise PSD and transfer functions for
+  all TDI channels with and without `gen2`, the ERYN Gamma likelihood).
+* B5 gives identical segments over 60 seeds, including the duty-cycle branch.
+* B4 gives identical binned data, counts and frequencies for chunked `lin` and `log` data.
+
+Tests: the last five tests of [tests/test_paper_bugs.py](../tests/test_paper_bugs.py).
+
 ---
 
 ## Fixed bugs (Galactic envelope)
@@ -560,7 +590,8 @@ cd data/needlet_patches
 ../../.venv/bin/python envelope_check.py      # first-principles comparison and impact on the pack-2 envelope
 ```
 
-`paper_terms_check.py` reads the pre-fix code from git (commit `4db1cc9`). The B1–B6 fixes are covered by
+`paper_terms_check.py` reads the pre-fix code from git (commit `4db1cc9`). The B1–B7 fixes and the switches that
+turn them off are covered by
 
 ```
 .venv/bin/python -m pytest tests/test_paper_bugs.py      # ~15 s

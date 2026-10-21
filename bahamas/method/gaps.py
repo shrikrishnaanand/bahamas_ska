@@ -4,6 +4,8 @@ It provides a function to create gaps in observation data, considering scheduled
 """
 import numpy as np
 
+from bahamas import fixes
+
 def generate_gaps(T_obs, scheduled_gap=7*3600, scheduled_period=14*86400, unscheduled_gap=0., exp_scale=10*86400, merge_threshold=1*86400, duty_cycle=0.75):
     """
     Generate observation gaps based on scheduled and unscheduled constraints.
@@ -55,7 +57,14 @@ def generate_gaps(T_obs, scheduled_gap=7*3600, scheduled_period=14*86400, unsche
         total_gap_time = sum(end - start for start, end in merged_gaps)
         required_gap_time = (1 - duty_cycle) * T_obs
 
-        if total_gap_time > required_gap_time:
+        if total_gap_time > required_gap_time and not fixes.enabled('B5'):
+            # Pre-fix B5: drop the last gaps
+            excess_time = total_gap_time - required_gap_time
+            while excess_time > 0 and merged_gaps:
+                start, end = merged_gaps.pop()
+                excess_time -= end - start
+
+        elif total_gap_time > required_gap_time:
             excess_time = total_gap_time - required_gap_time
             keep = np.ones(len(merged_gaps), dtype=bool)
             for k in np.random.permutation(len(merged_gaps)):
@@ -69,13 +78,22 @@ def generate_gaps(T_obs, scheduled_gap=7*3600, scheduled_period=14*86400, unsche
         # longer than 0.9 sched_period is kept, cut to at most sched_period and never past its own end.
         stretch_starts = [0.] + [end for _, end in merged_gaps]
         stretch_ends = [start for start, _ in merged_gaps] + [T_obs]
+        if not fixes.enabled('B5'):
+            # Pre-fix B5: only stretches between two gaps, each extended to a full sched_period (possibly into
+            # the next gap)
+            stretch_starts, stretch_ends = stretch_starts[1:-1], stretch_ends[1:-1]
         for data_start, data_end in zip(stretch_starts, stretch_ends):
             if data_end - data_start > 0.90 * scheduled_period:
-                data_seg.append((data_start, min(data_start + scheduled_period, data_end)))
+                data_end_kept = min(data_start + scheduled_period, data_end) if fixes.enabled('B5') else data_start + scheduled_period
+                data_seg.append((data_start, data_end_kept))
 
     else:
         for start, end in scheduled_gaps:
             data_start = end
+            if not fixes.enabled('B5'):
+                # Pre-fix B5: the last segment can end after T_obs
+                data_seg.append((data_start, end + scheduled_period))
+                continue
             data_end = min(end + scheduled_period, T_obs)
             if data_end - data_start > 0.90 * scheduled_period:
                 data_seg.append((data_start, data_end))

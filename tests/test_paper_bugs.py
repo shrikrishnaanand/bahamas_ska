@@ -1,4 +1,4 @@
-"""Regression tests for the code bugs B1-B6 of reports/PAPER_BUGS.md."""
+"""Regression tests for the code bugs B1-B7 of reports/PAPER_BUGS.md, and the switches that turn each fix off."""
 import numpy as np
 import pytest
 
@@ -157,3 +157,81 @@ def test_point_source_time_average():
         for tdi, inst in ((0, A), (1, E)):
             ref = np.trapezoid(np.array(inst) ** 2, np.array(ts)) / (t2 - t1) / np.cos(b)
             assert float(envelopes_time_average(b, l, 1 / YEAR, t1, t2, tdi)) == pytest.approx(ref, rel=1e-6)
+
+
+# Switches (bahamas.fixes): every fix is on by default and can be turned off to restore the pre-fix code.
+# Each pre-fix branch was checked against the code before the fix (from git) to <= 1e-12.
+
+from bahamas import fixes  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def default_fixes():
+    fixes.configure({})
+    yield
+    fixes.configure({})
+
+
+def test_fixes_config():
+    """All fixes are on by default; a config turns them off; legacy_dof is an alias of B2: false."""
+    assert all(fixes.configure({}).values())
+    assert not fixes.configure({'fixes': {'F1': False}})['F1']
+    assert not fixes.configure({'inference': {'legacy_dof': True}})['B2']
+    with pytest.raises(ValueError):
+        fixes.configure({'fixes': {'B99': False}})
+
+
+def test_fix_off_restores_pre_fix_formulas():
+    """F1, F2, B3b, B6, B7 off change the output; with them on again the output is back to the default."""
+    e = ENVELOPE
+    ts = jnp.linspace(0, YEAR, 101)
+    ref = np.array(envelopes_gaussian(e['lat'], e['long'], e['s1'], e['s2'], e['sin_psi'], 1 / YEAR, ts, 0.4, -1.1))
+    for key in ('F1', 'F2', 'B6'):
+        with fixes.override(**{key: False}):
+            off = np.array(envelopes_gaussian(e['lat'], e['long'], e['s1'], e['s2'], e['sin_psi'], 1 / YEAR, ts,
+                                              0.4, -1.1))
+        assert not np.allclose(off, ref, rtol=1e-6), key
+    np.testing.assert_array_equal(
+        np.array(envelopes_gaussian(e['lat'], e['long'], e['s1'], e['s2'], e['sin_psi'], 1 / YEAR, ts, 0.4, -1.1)), ref)
+
+    L, f = 8.3, np.logspace(-3, np.log10(0.035), 20)
+    w = 2 * np.pi * f * L
+    with fixes.override(B3b=False):
+        tf = psd_noise.transfer_functions_acc(jnp.array(f), L, tdi=0, gen2=False)
+    np.testing.assert_allclose(np.array(tf), 8 * np.sin(w) ** 2 * 4 * (1 + 2 * np.cos(w)), rtol=1e-10)
+
+    from bahamas.psd_response.average_envelope_num import envelopes_time_average
+    b, l, t1, t2 = 0.3, 1.7, 40 * DAY, 70 * DAY
+    with fixes.override(B7=False):
+        off = float(envelopes_time_average(b, l, 1 / YEAR, t1, t2, 0))
+    assert off != pytest.approx(float(envelopes_time_average(b, l, 1 / YEAR, t1, t2, 0)), rel=1e-6)
+
+
+def test_eryn_gamma_b1_off(constant_psd):
+    """B1 off: the ERYN Gamma likelihood squares P_hat again and no longer peaks at S = P_hat."""
+    data, dof = np.full((1, NB), P_HAT), 2 * NB * np.ones(NB)
+    grid = P_HAT * np.exp(np.linspace(-3, 3, 13))
+    with fixes.override(B1=False):
+        ll = []
+        for S in grid:
+            constant_psd(S)
+            ll.append(_log_like('eryn', setting_eryn.gamma_lik, data, dof))
+    assert np.argmax(ll) == 0
+
+
+def test_gaps_b5_off():
+    """B5 off: segments are a full sched_period long again, including those the fix cuts short at the next gap."""
+    shortened = 0
+    kw = dict(scheduled_gap=7 * 3600, scheduled_period=14 * DAY, unscheduled_gap=3 * 3600., exp_scale=10 * DAY,
+              merge_threshold=DAY, duty_cycle=0.75)
+    for seed in range(5):
+        np.random.seed(seed)
+        start, end = gaps.generate_gaps(YEAR, **kw)
+        with fixes.override(B5=False):
+            np.random.seed(seed)
+            start_off, end_off = gaps.generate_gaps(YEAR, **kw)
+        np.testing.assert_allclose(end_off - start_off, 14 * DAY)
+        cut = end < start + 14 * DAY - 1e-6
+        shortened += np.sum(cut)
+        assert np.all(np.isin(start[cut], start_off))
+    assert shortened > 0

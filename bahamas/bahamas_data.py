@@ -22,6 +22,7 @@ from bahamas.psd_response import response as resp
 from bahamas.method import gaps
 from bahamas.method import setting_data
 from bahamas.logger_config import logger
+from bahamas import fixes
 
 import matplotlib.pylab as plt
 import numpy as np
@@ -117,6 +118,7 @@ class SignalProcessor:
         - sources (dict): Source parameters.
         """
         self.config = config
+        fixes.configure(config)
         self.T = self.config['T']
         self.dt = self.config['dt']
         self.nseg = self.config['nseg']
@@ -269,8 +271,8 @@ class SignalProcessor:
         f_av, response, data, responseAV, dataAV, count = [], [], [], [], [], []
         for i, freqs in enumerate(self.freq_tot):
             # Conversion factor from PSD to Fourier coefficients, with this segment's own length (gapped
-            # segments need not all have the same length)
-            N = self.N_tot[i]
+            # segments need not all have the same length). Pre-fix B4: one length, TOBS, for all segments.
+            N = self.N_tot[i] if fixes.enabled('B4') else self.TOBS // self.dt
             factor = (2 * self.dt / N)**0.5
 
 
@@ -283,7 +285,16 @@ class SignalProcessor:
                 _tdi *= factor 
                 data_chunk_tdi.append(_tdi)
 
-                if self.config['mod'] == 'lin':
+                if self.config['mod'] == 'lin' and not fixes.enabled('B4'):
+                    # Pre-fix B4: bins of N // nseg amplitudes, N counting time samples (about nseg/2 bins)
+                    dof = self.N_tot[i] // self.nseg
+                    f, d_av_tdi, R_av_tdi, _ = setting_data.average_chunks(freqs, np.abs(_tdi)**2, response_tdi[ind_tdi], dof)
+                    data_chunk_tdi_av.append(d_av_tdi)
+                    response_tdi_av.append(R_av_tdi)
+                    if ind_tdi == 0:
+                        count.append(dof*np.ones_like(f))
+
+                elif self.config['mod'] == 'lin':
                     # nseg bins of positive frequencies (the DC amplitude is zero); count = amplitudes per bin
                     pos = freqs > 0
                     chunk_size = np.sum(pos) // self.nseg

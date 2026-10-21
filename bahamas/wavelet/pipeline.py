@@ -18,6 +18,7 @@ import os
 
 import numpy as np
 
+from bahamas import fixes
 from bahamas.backend_context import get_backend_components
 from bahamas.wavelet import plotting
 from bahamas.wavelet.model import WaveletData, WaveletLikelihood
@@ -67,6 +68,7 @@ def generate_data(config, sources):
         WaveletData: The saved data.
     """
     _require_jax()
+    fixes.configure(config)
     wcfg = config['wavelet']
     dt, T, gen2 = float(config['dt']), float(config['T']), bool(config.get('gen2', False))
     t0 = float(config.get('t0', 0.0))
@@ -121,6 +123,7 @@ def run_inference(config, sources):
         dict: Sampler results.
     """
     _require_jax()
+    fixes.configure(config)
     wcfg, icfg = config['wavelet'], config['inference']
     data_file = icfg.get('file', wcfg['file'])
     data = WaveletData.load(data_file + '.h5')

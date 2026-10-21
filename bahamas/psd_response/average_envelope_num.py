@@ -1,6 +1,7 @@
 from bahamas.backend_context import get_backend_components
 # Load backend components after backend initialization
 jnp, jit, lax = get_backend_components()
+from bahamas import fixes
 
 if jnp is None:
     import numpy as jnp
@@ -163,7 +164,9 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     # alpha0, beta0 (Klein et al. App. A): h(b, l) = R[2 (beta0 - alpha0)] h_0(b, l - alpha0), a rotation of the
     # (h_A, h_E) signals. It leaves A^2 + E^2 unchanged and shifts the phase of A^2 - E^2 by -4 (beta0 - alpha0)
     # (PAPER_BUGS.md B6), so it enters here and not as a rotation of the envelopes.
-    FourphiNbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.) - 4. * (beta0 - alpha0)
+    FourphiNbar = 4. * ((EclipticLongitude - alpha0) + jnp.pi / 12.)
+    if fixes.enabled('B6'):
+        FourphiNbar = FourphiNbar - 4. * (beta0 - alpha0)
     root3 = jnp.sqrt(3.)
     overall_fact = 1. / 640.
     
@@ -176,7 +179,12 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     Sum *= overall_fact
     
     # A^2 - E^2
-    Diff = (-1296. + 6480. * sthN2 - 5670. * sthN4) * (jnp.sin(4. * a - FourphiNbar - 4. * phit1) - jnp.sin(4. * a - FourphiNbar - 4. * phit2)) / (4. * T * fac)
+    if fixes.enabled('B7'):
+        Diff4 = jnp.sin(4. * a - FourphiNbar - 4. * phit1) - jnp.sin(4. * a - FourphiNbar - 4. * phit2)
+    else:
+        # Pre-fix B7: 16 lbar instead of 4 lbar in the phase
+        Diff4 = jnp.sin(4. * (a - FourphiNbar - phit1)) - jnp.sin(4. * (a - FourphiNbar - phit2))
+    Diff = (-1296. + 6480. * sthN2 - 5670. * sthN4) * Diff4 / (4. * T * fac)
     Diff += root3 * cthN * sthN * (864. - 1512. * sthN2) \
         * (-3. * (jnp.sin(3*a - FourphiNbar - 3*phit1) - jnp.sin(3*a - FourphiNbar - 3*phit2)) / (3*T*fac) + (jnp.sin(5*a - FourphiNbar - 5*phit1) - jnp.sin(5*a - FourphiNbar - 5*phit2)) / (5*T*fac))
     Diff += sthN2 * (-648. + 756. * sthN2) \
@@ -190,6 +198,11 @@ def envelopes_time_average(EclipticLatitude, EclipticLongitude, LISA_Orbital_Fre
     
     A = 0.5 * (jnp.abs(Sum + Diff))
     E = 0.5 * (jnp.abs(Sum - Diff))
+    if not fixes.enabled('B6'):
+        # Pre-fix B6: rotation of the envelopes by 2 (beta0 - alpha0)
+        sDect = jnp.sin(2. * (beta0 - alpha0))
+        cDect = jnp.cos(2. * (beta0 - alpha0))
+        A, E = jnp.abs(cDect * A - sDect * E), jnp.abs(sDect * A + cDect * E)
     
 
     if lax is not None:

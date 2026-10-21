@@ -11,6 +11,9 @@ response_num: True #flag to compute the response function to a anisotropic, stat
 #chunk: #section dedicated to the chunk of data
 #  duration: 1296000 #duration of the chunk in seconds
 
+#fixes: #turn off a bug fix of reports/PAPER_BUGS.md to restore the pre-fix code (all fixes are on by default)
+#  F1: true  #F1, F2, B1, B2, B3b, B4, B5, B6, B7
+
 #frange
 f1: 0.0001 #minimum frequency in Hz
 f2: 0.029 #maximum frequency in Hz

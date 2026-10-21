@@ -20,6 +20,7 @@ from bahamas.method import setting_hmc
 from bahamas.method import setting_nessai 
 from bahamas.method import setting_eryn
 from bahamas.logger_config import logger
+from bahamas import fixes
 
 import numpy as np
 import h5py
@@ -192,6 +193,8 @@ def set(config, sources):
             - dof (array): Degrees of freedom for each segment.
             - matrix_egp (np.ndarray or None): The initialized EGP matrix.
     """
+    fixes.configure(config)
+
     # Load Data
     data, response, freqs, count, gen2, t1, t2 = read_data(config=config)
 
@@ -199,8 +202,9 @@ def set(config, sources):
 
     # Real Gaussian degrees of freedom per data point: each complex Fourier amplitude carries two (real and
     # imaginary part), so a coarse bin averaging n_b amplitudes has 2 n_b (PAPER_BUGS.md B2).
-    # inference: legacy_dof: True reproduces Pozzoli et al. Eqs. (3) and (9) as printed (one per amplitude).
-    dof_per_amplitude = 1 if config['inference'].get('legacy_dof', False) else 2
+    # fixes: B2: false (or inference: legacy_dof: true) reproduces Pozzoli et al. Eqs. (3) and (9) as printed
+    # (one per amplitude).
+    dof_per_amplitude = 2 if fixes.enabled('B2') else 1
     dof = [dof_per_amplitude * np.asarray(c) for c in count]
 
     # Setup Inference Method
