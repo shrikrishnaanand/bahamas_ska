@@ -7,9 +7,9 @@ can the atoms bridge 10 days of missing data, and what does it cost? Wavelet pip
 
 Done on Oct 17, 2026.
 
-* Notebook (reproduces every number and figure): [data/wavelet_injection/run4_gap.ipynb](../data/wavelet_injection/run4_gap.ipynb)
-* Command: `python injection.py --tag run4 --injection sky --gap 10 20` ([injection.py](../data/wavelet_injection/injection.py))
-* Outputs: `data/wavelet_injection/outputs/run4/`
+* Notebook (reproduces every number and figure): [simulations/30_days/run4/run4_gap.ipynb](../simulations/30_days/run4/run4_gap.ipynb)
+* Command: `python injection.py --tag run4 --injection sky --gap 10 20` ([injection.py](../simulations/common/injection.py))
+* Outputs: `simulations/30_days/outputs/run4/`
 
 ## Setup
 

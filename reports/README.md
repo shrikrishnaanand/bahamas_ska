@@ -9,10 +9,10 @@
 | [GF_TIME_FREQUENCY_NOTE.pdf](GF_TIME_FREQUENCY_NOTE.pdf) ([.tex](GF_TIME_FREQUENCY_NOTE.tex)) | Step-by-step guide for a master student: Part I the chunked Fourier analysis (Pozzoli et al.), Part II the wavelet (WDM) analysis: transform, atoms, pixel statistics, grouping, Gamma proof, equivalence with Eq. 9 and its dof error, RJMCMC, gaps |
 | [PAPER_BUGS.md](PAPER_BUGS.md) | bahamas checked against Klein et al. and Pozzoli et al.: envelope errors F1–F2 and code bugs B1–B7 (all fixed, with status and checks), misprints in the papers, open questions, conventions |
 
-Code and notebooks: [data/wavelet_injection/](../data/wavelet_injection/) (see its README).
+Code and notebooks: [simulations/30_days/](../simulations/30_days/) (see its README).
 
 Separate study (Oct 12, stages 0–1 done): bright patches of excess power on the Galaxy and what a needlet sky model
-can recover in 30 days. Write-up and code in [data/needlet_patches/](../data/needlet_patches/README.md).
+can recover in 30 days. Write-up and code in [simulations/30_days/needlet_patches/](../simulations/30_days/needlet_patches/README.md).
 
 **Runs redone with the fixed code (Oct 2026).** The first runs 1 and 2 (Oct 11) used the envelope before the F1/F2
 fix; their reports were removed and their outputs archived in `data/archive/wavelet_runs_prefix_oct11/`. Both runs were

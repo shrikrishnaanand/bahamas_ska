@@ -17,16 +17,16 @@ The question: **are the wavelet posteriors broader?**
 
 The previous version (Oct 11, pre-fix envelope) is archived in `data/archive/wavelet_runs_prefix_oct11/run2/`.
 
-* Notebook (reproduces every number and figure): [data/wavelet_injection/run2_sky_vs_og.ipynb](../data/wavelet_injection/run2_sky_vs_og.ipynb)
-* Code: [injection.py](../data/wavelet_injection/injection.py) (simulation, wavelet run),
-  [og.py](../data/wavelet_injection/og.py) (OG run), [data_checks.py](../data/wavelet_injection/data_checks.py)
-  (input checks), [diagnostics.py](../data/wavelet_injection/diagnostics.py) (convergence)
-* Outputs: `data/wavelet_injection/outputs/run2/` (`og/` and `og_legacy/` for the two OG runs), `outputs/checks/`
+* Notebook (reproduces every number and figure): [simulations/30_days/run2/run2_sky_vs_og.ipynb](../simulations/30_days/run2/run2_sky_vs_og.ipynb)
+* Code: [injection.py](../simulations/common/injection.py) (simulation, wavelet run),
+  [og.py](../simulations/common/og.py) (OG run), [data_checks.py](../simulations/30_days/checks/data_checks.py)
+  (input checks), [diagnostics.py](../simulations/common/diagnostics.py) (convergence)
+* Outputs: `simulations/30_days/outputs/run2/` (`og/` and `og_legacy/` for the two OG runs), `outputs/checks/`
 * Run 1 (recovery of a modulation the atoms represent exactly): [WAVELET_INJECTION_RUN1.md](WAVELET_INJECTION_RUN1.md)
 
 ## Setup
 
-Injected values: [config/sources.yaml](../data/wavelet_injection/config/sources.yaml), the paper-2 pack-2 values
+Injected values: [config/sources.yaml](../simulations/30_days/config/sources.yaml), the paper-2 pack-2 values
 ([arXiv:2511.03604](https://arxiv.org/abs/2511.03604)):
 
 | lat | long | sin ψ | s1 | s2 | amp | alpha | fknee | fr1 | fr2 | noise A | noise P |
@@ -63,7 +63,7 @@ run2_sky_vs_og.ipynb: diagnostics, p(K), OG sky posterior, spectral corner, gala
 
 ## Input checks
 
-The data checks behind the settings ([data_checks.py](../data/wavelet_injection/data_checks.py),
+The data checks behind the settings ([data_checks.py](../simulations/30_days/checks/data_checks.py),
 `outputs/checks/data_checks.png`) were not rerun: they test the transforms and the windowing, which the fixes do not
 touch. Their conclusions:
 

@@ -36,7 +36,7 @@ def test_average_envelopes_gaussian_exact_value():
     )
 
     # Expected value: Gaussian average of the point-source coefficients of Buscicchio et al. 2024 (arXiv:2410.08263,
-    # App. A), computed independently of this function (data/needlet_patches/paper_terms_check.py), which agrees with
+    # App. A), computed independently of this function (simulations/30_days/needlet_patches/paper_terms_check.py), which agrees with
     # the function to 1e-10. Before the transcription fix (cosh -> sinh, missing exp(-2 sigma_+^2) and
     # exp(-6 sigma_+^2) factors) the function returned 2.0844846240337227.
     expected_value = 2.5628499759670995

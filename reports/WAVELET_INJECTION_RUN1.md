@@ -15,19 +15,19 @@ The wavelet likelihood was never affected by the dof issue B2: WDM coefficients 
 The previous version of this run (Oct 11, pre-fix code) is archived in
 `data/archive/wavelet_runs_prefix_oct11/`.
 
-* Notebook (reproduces every number and figure): [data/wavelet_injection/run1_inject_recover.ipynb](../data/wavelet_injection/run1_inject_recover.ipynb)
-* Code: [fit_reference.py](../data/wavelet_injection/fit_reference.py) (the injected atoms),
-  [injection.py](../data/wavelet_injection/injection.py) (`python injection.py --tag run1 --injection wavelet --rerun-data`),
-  [diagnostics.py](../data/wavelet_injection/diagnostics.py)
-* Outputs: `data/wavelet_injection/outputs/run1/`, `outputs/reference/`; layout in
-  [data/wavelet_injection/README.md](../data/wavelet_injection/README.md)
+* Notebook (reproduces every number and figure): [simulations/30_days/run1/run1_inject_recover.ipynb](../simulations/30_days/run1/run1_inject_recover.ipynb)
+* Code: [fit_reference.py](../simulations/common/fit_reference.py) (the injected atoms),
+  [injection.py](../simulations/common/injection.py) (`python injection.py --tag run1 --injection wavelet --rerun-data`),
+  [diagnostics.py](../simulations/common/diagnostics.py)
+* Outputs: `simulations/30_days/outputs/run1/`, `outputs/reference/`; layout in
+  [simulations/30_days/README.md](../simulations/30_days/README.md)
 * Method: [GF_TIME_FREQUENCY_NOTE.pdf](GF_TIME_FREQUENCY_NOTE.pdf), Part II
 
 ## What was injected
 
 `fit_reference.py` fits the true GF envelope over the 30 days by least squares. The envelope is computed with the
 fixed `envelopes_gaussian`, for the sky parameters with sin ψ = −0.83 in
-[config/sources.yaml](../data/wavelet_injection/config/sources.yaml). The fit keeps the smallest K with an rms error
+[config/sources.yaml](../simulations/30_days/config/sources.yaml). The fit keeps the smallest K with an rms error
 below 1%:
 
 | K | 0 | 1 | 2 | 3 |

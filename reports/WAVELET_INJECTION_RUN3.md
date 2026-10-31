@@ -7,20 +7,20 @@ questions: is the modulation still recovered, and how much do the posteriors wid
 
 Done on Oct 16, 2026, with the code of runs 1–2 plus the likelihood mask described below.
 
-* Notebook (reproduces every number and figure): [data/wavelet_injection/run3_gap.ipynb](../data/wavelet_injection/run3_gap.ipynb)
+* Notebook (reproduces every number and figure): [simulations/30_days/run3/run3_gap.ipynb](../simulations/30_days/run3/run3_gap.ipynb)
 * Code:
-  * [injection.py](../data/wavelet_injection/injection.py): `python injection.py --tag run3 --injection sky --gap 12 13`
+  * [injection.py](../simulations/common/injection.py): `python injection.py --tag run3 --injection sky --gap 12 13`
     (`--k-trace` for the burn-in);
-  * [gap_check.py](../data/wavelet_injection/gap_check.py): which pixels a gap biases;
+  * [gap_check.py](../simulations/30_days/checks/gap_check.py): which pixels a gap biases;
   * `WaveletLikelihood(time_mask=...)` in [bahamas/wavelet/model.py](../bahamas/wavelet/model.py).
-* Outputs: `data/wavelet_injection/outputs/run3/`; gap checks in `outputs/checks/gap_check.png`,
+* Outputs: `simulations/30_days/outputs/run3/`; gap checks in `outputs/checks/gap_check.png`,
   `gap_likelihood_mask.png`
 
 ## How the gap is handled
 
 1. **The data.** The time series is set to zero for 12.0 ≤ t < 13.0 d, i.e. 8640 samples per channel. It is identical
    to run 2's series everywhere else (checked in the notebook).
-2. **Which pixels are biased.** [gap_check.py](../data/wavelet_injection/gap_check.py) measured this over 20 noise
+2. **Which pixels are biased.** [gap_check.py](../simulations/30_days/checks/gap_check.py) measured this over 20 noise
    realisations, with the WDM power of each pixel compared with its expectation:
    * the 3 time pixels that overlap the gap are 60–91% low;
    * the pixel just outside on each side is about 10% low above 1 mHz, and 25–40% high below 1 mHz, where the hard

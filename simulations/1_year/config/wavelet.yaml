@@ -1,0 +1,38 @@
+# Wavelet-pipeline settings of the 1-year study (loaded by run1/run1_inject_recover.ipynb with injection.load_config).
+# As the 30-day study (../../30_days/config/wavelet.yaml) except T, out, and the atom prior (width, max K).
+# Write exponents with a decimal point (1.0e-4, not 1e-4): PyYAML reads 1e-4 as a string.
+
+T: 31557600.0                 # 365.25 d; the WDM grid trims it to an even number of 10-h pixels (876 = 365.0 d)
+dt: 10.0                      # sampling interval [s]
+t0: 0.0                       # start time [s]
+gen2: false                   # TDI generation 2 (false: gen 1)
+f1: 1.0e-4                    # analysed band [Hz]
+f2: 0.029
+pad_days: 2.0                 # the series is simulated with this much extra data on each side and then cut, so its
+                              # ends do not wrap around (the simulator draws a circular, i.e. periodic, series)
+out: outputs                  # outputs folder, relative to this study: simulations/1_year/outputs
+og_config: config/og_config.yaml   # OG (chunked) pipeline settings of this study (run 2)
+
+wavelet:
+  Nf: 3600                    # frequency pixels; time pixels are Nf * dt = 10 h long
+  nx: 4.0                     # WDM window steepness
+  channels: [0, 1]            # A, E
+  seed: 2026                  # simulation seed
+  freq_bins: 200              # log-spaced frequency groups of the likelihood (fewer after merging empty ones)
+  edge_bins: 2                # the likelihood drops the first and last two 10-h pixels (biased by the periodic WDM)
+  time_bin: 2                 # time pixels per likelihood block (20 h)
+  band_samples: 8             # frequency samples per group for the model PSD
+
+inference:
+  wavelet_shape: gaussian     # atom shape: gaussian or ricker
+  min_wavelets: 0             # prior on the number of atoms K per channel (uniform)
+  max_wavelets: 16            # the envelope repeats twice a year: many more atoms than over 30 days (8)
+  width_range_days: [5.0, 120.0]  # atom width prior [d], log-uniform (30 days: 5-60)
+  amp_range: [-3.0, 3.0]      # atom amplitude prior (ln P units)
+  level_range: [-3.0, 3.0]    # level_E prior
+  atom_step: 0.02             # proposal scale of the atom moves
+  nwalkers: 32
+  ntemps: 4
+  nsteps: 6000                # stored steps
+  burnin: 2000
+  seed: 1                     # sampler seed

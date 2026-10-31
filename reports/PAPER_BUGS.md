@@ -81,7 +81,7 @@ implement App. A of Klein et al. Every term of the code was checked against the 
 
 ### How it was checked
 
-[data/needlet_patches/paper_terms_check.py](../data/needlet_patches/paper_terms_check.py), against the arXiv TeX
+[simulations/30_days/needlet_patches/paper_terms_check.py](../simulations/30_days/needlet_patches/paper_terms_check.py), against the arXiv TeX
 source of the paper. The point-source coefficients and the Gaussian averaging rule are taken from the paper itself,
 so each printed term can be recomputed independently:
 
@@ -101,7 +101,7 @@ parameter sets. That is 45 terms: 5 H_S groups and 9 H_D groups, each with three
 | code before the fix (`4db1cc9`) | 17 of 45 |
 | code after the fix | 45 of 45 |
 
-A second check, [envelope_check.py](../data/needlet_patches/envelope_check.py), compares the envelope with a
+A second check, [envelope_check.py](../simulations/30_days/needlet_patches/envelope_check.py), compares the envelope with a
 first-principles low-frequency response from the bahamas orbits. It tests a point source (with the paper's cos b sky
 measure, see C1) and an exact numerical Gaussian sky average:
 
@@ -170,7 +170,7 @@ matches a brute-force mean of $A^2(t)$ over 20,000 samples to four digits for al
 ### Impact of F1 and F2
 
 At the pack-2 values (sin b_M −0.0966, l_M −1.626, s1 0.0416, s2 0.1384, sin ψ −0.83) over 30 days
-([envelope_check.py](../data/needlet_patches/envelope_check.py)):
+([envelope_check.py](../simulations/30_days/needlet_patches/envelope_check.py)):
 
 * The pre-fix envelope differs from the fixed one by 15% in the mean of $P_A$ (3% in $P_E$), and in shape by up to
   19% (A) and 9% (E).
@@ -585,7 +585,7 @@ These do not make any result wrong, but they matter when the parameters are read
 ## Reproduce
 
 ```
-cd data/needlet_patches
+cd simulations/30_days/needlet_patches
 ../../.venv/bin/python paper_terms_check.py   # term-by-term table (paper, code before the fix, code now), ~1 min
 ../../.venv/bin/python envelope_check.py      # first-principles comparison and impact on the pack-2 envelope
 ```
