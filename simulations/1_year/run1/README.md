@@ -1,6 +1,7 @@
 # Run 1 (1 year): commands
 
-Needs: nothing. Run everything from the repository root.
+Needs: nothing. Run from the repository root. These are the commands the notebook runs with `RERUN = True`
+(it uses `K_MAX = 12`); change both together.
 
 ## Python
 
@@ -9,13 +10,7 @@ python simulations/common/fit_reference.py --config simulations/1_year/config/wa
 python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run1 --injection wavelet
 ```
 
-Optional (burn-in K trace, as long again as the wavelet run):
-
-```
-python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run1 --injection wavelet --k-trace
-```
-
-Then open [run1_inject_recover.ipynb](run1_inject_recover.ipynb) with `RERUN = False`: it loads the outputs from `simulations/1_year/outputs/run1/`.
+Then open [run1_inject_recover.ipynb](run1_inject_recover.ipynb) with `RERUN = False` to load the outputs (`simulations/1_year/outputs/run1/`).
 
 ## Slurm
 

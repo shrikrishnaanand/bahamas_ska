@@ -1,6 +1,7 @@
 # Run 2 (1 year): commands
 
-Needs: run 1 (outputs/reference/). Run everything from the repository root.
+Needs: run 1. Run from the repository root. These are the commands the notebook runs with `RERUN = True`
+(it uses `TAG = run2`); change both together.
 
 ## Python
 
@@ -10,13 +11,7 @@ python simulations/common/og.py --config simulations/1_year/config/wavelet.yaml 
 python simulations/common/og.py --config simulations/1_year/config/wavelet.yaml --tag run2 --legacy-dof
 ```
 
-Optional (burn-in K trace, as long again as the wavelet run):
-
-```
-python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run2 --injection sky --k-trace
-```
-
-Then open [run2_sky_vs_og.ipynb](run2_sky_vs_og.ipynb) with `RERUN = False`: it loads the outputs from `simulations/1_year/outputs/run2/`.
+Then open [run2_sky_vs_og.ipynb](run2_sky_vs_og.ipynb) with `RERUN = False` to load the outputs (`simulations/1_year/outputs/run2/`).
 
 ## Slurm
 

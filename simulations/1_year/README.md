@@ -29,8 +29,8 @@ python simulations/common/fit_reference.py --config simulations/1_year/config/wa
 python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run1 --injection wavelet
 python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run2 --injection sky
 python simulations/common/og.py        --config simulations/1_year/config/wavelet.yaml --tag run2 [--legacy-dof]
-python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run3 --injection sky --gap 12 13
-python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run4 --injection sky --gap 10 20
+python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run3 --injection sky --gap 12 13 --gap-buffer 1
+python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run4 --injection sky --gap 10 20 --gap-buffer 1
 ```
 
 Each run folder has a README with its commands and a Slurm script (`sbatch simulations/1_year/runN/runN.slurm`,
