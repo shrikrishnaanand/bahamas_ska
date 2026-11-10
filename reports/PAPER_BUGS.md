@@ -8,6 +8,10 @@ Checked against two papers (both first-authored by R. Buscicchio, so named by th
 Equation numbers are those of the arXiv PDFs. The previous, longer version of this file (full derivations, impact
 tables) is in git history (commit `1a1afde`).
 
+Each bug links to the **original bahamas** code ([FedericoPozzoli/bahamas](https://github.com/FedericoPozzoli/bahamas) `main`,
+commit [`8441c32`](https://github.com/FedericoPozzoli/bahamas/tree/8441c32109eb5fa9f8bd0038d1a66f68cea61466)) and to **ours, fixed** (this repo). The equation under each
+**Code** line is what the original code computes.
+
 ## Summary
 
 | ID | issue | status |
@@ -48,7 +52,7 @@ a spurious term that should vanish.
 -864\left(\cosh\tfrac{3\sigma_s^2}{2}\sin b_M\cos 3\Delta\phi_L + \sinh\tfrac{3\sigma_s^2}{2}\cos b_M\sin 3\Delta\phi_L\right)
 ```
 
-**Code before** ([modulation.py:168](../bahamas/psd_response/modulation.py#L168)):
+**Code** (original bahamas: [modulation.py:152](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/modulation.py#L152); ours, fixed: [modulation.py:168](../bahamas/psd_response/modulation.py#L168)):
 
 ```math
 -864\left(\cosh\tfrac{3\sigma_s^2}{2}\sin b_M\cos 3\Delta\phi_L + \cosh\tfrac{3\sigma_s^2}{2}\cos b_M\sin 3\Delta\phi_L\right)
@@ -77,7 +81,7 @@ dropping the paper's extra $e^{-2\sigma_+^2}$ and $e^{-6\sigma_+^2}$ (48 terms).
 -32112\,e^{-2\sigma_+^2}\left(\cosh\tfrac{3\sigma_s^2}{2}\sin 3b_M\cos\Delta\phi_L + \sinh\tfrac{3\sigma_s^2}{2}\cos 3b_M\sin\Delta\phi_L\right)
 ```
 
-**Code before** ([modulation.py:155-215](../bahamas/psd_response/modulation.py#L155-L215)):
+**Code** (original bahamas: [modulation.py:139-199](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/modulation.py#L139-L199); ours, fixed: [modulation.py:155-215](../bahamas/psd_response/modulation.py#L155-L215)):
 
 ```math
 -32112\left(\cosh\tfrac{3\sigma_s^2}{2}\sin 3b_M\cos\Delta\phi_L + \sinh\tfrac{3\sigma_s^2}{2}\cos 3b_M\sin\Delta\phi_L\right)
@@ -114,7 +118,7 @@ becomes about 10⁻⁴⁰ and the likelihood runs off to $S \to 0$.
 -\tfrac{n_b}{2}\ln S - \tfrac{n_b}{2}\tfrac{\hat P}{S}
 ```
 
-**Code before** ([setting_eryn.py:147-152](../bahamas/method/setting_eryn.py#L147-L152)):
+**Code** (original bahamas: [setting_eryn.py:138-143](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_eryn.py#L138-L143); ours, fixed: [setting_eryn.py:138-144](../bahamas/method/setting_eryn.py#L138-L144)):
 
 ```math
 -\tfrac{n_b}{2}\ln S - \tfrac{\hat P^2}{2S}
@@ -144,7 +148,7 @@ The paper uses shape $n_b/2$, which halves the log-likelihood and makes posterio
 \ln\mathcal L_W = -\tfrac12\sum_k\left(\tfrac{|\tilde d_k|^2}{S_k} + \ln S_k\right),\qquad \hat P \sim \mathrm{Gamma}\!\left(\tfrac{n_b}{2},\ \tfrac{2S}{n_b}\right)
 ```
 
-**Code before** ([setting_hmc.py:86-92](../bahamas/method/setting_hmc.py#L86-L92), [setting_nessai.py](../bahamas/method/setting_nessai.py#L26), [setting_eryn.py](../bahamas/method/setting_eryn.py#L29)): the paper's form, with `dof = count`.
+**Code** (original bahamas: [setting_inference.py:204](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_inference.py#L204), [setting_hmc.py:86](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_hmc.py#L86), [setting_hmc.py:112](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_hmc.py#L112), [setting_nessai.py:50](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_nessai.py#L50), [setting_eryn.py:79-81](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/setting_eryn.py#L79-L81); ours, fixed: [setting_inference.py:207-208](../bahamas/method/setting_inference.py#L207-L208), [setting_hmc.py:88-89](../bahamas/method/setting_hmc.py#L88-L89), [setting_nessai.py:52](../bahamas/method/setting_nessai.py#L52), [setting_eryn.py:81](../bahamas/method/setting_eryn.py#L81)): the paper's form, with `dof = count`.
 
 **Fix.** `dof` now counts real degrees of freedom: 2 per complex amplitude ([setting_inference.py:207-208](../bahamas/method/setting_inference.py#L207-L208)).
 
@@ -178,7 +182,7 @@ S_{\rm TM} = \frac{(A\,10^{-15})^2}{(2\pi f c)^2}\Big[1+\big(\tfrac{0.4\,\rm mHz
 S_{\rm OMS} = (P\,10^{-12})^2\Big(\tfrac{2\pi f}{c}\Big)^2\Big[1+\big(\tfrac{2\,\rm mHz}{f}\big)^4\Big]
 ```
 
-**Code** ([psd_noise.py:55-73](../bahamas/psd_strain/psd_noise.py#L55-L73)): $S_{\rm TM}$ without the $(f/8\,\rm mHz)^4$ factor; $S_{\rm OMS}$ filtered (equals Eq. 17 for $f \ll f_s$).
+**Code** (original bahamas: [psd_noise.py:44-55](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_strain/psd_noise.py#L44-L55); ours, fixed: [psd_noise.py:45-73](../bahamas/psd_strain/psd_noise.py#L45-L73)): $S_{\rm TM}$ without the $(f/8\,\rm mHz)^4$ factor; $S_{\rm OMS}$ filtered (equals Eq. 17 for $f \ll f_s$).
 
 **Option, default unchanged** (pending question Q5). Add the fixed parameter `paper_eqs` to switch to the paper's equations ([psd_noise.py:45-52](../bahamas/psd_strain/psd_noise.py#L45-L52)):
 
@@ -201,7 +205,7 @@ effect on the total noise PSD is at most 0.3% in band.
 4\,C_{XX}\,(3 + 2\cos w + \cos 2w) = 8\,C_{XX}\,(1 + \cos w + \cos^2 w)
 ```
 
-**Code before** ([psd_noise.py:142](../bahamas/psd_strain/psd_noise.py#L142), [psd_noise.py:208](../bahamas/psd_strain/psd_noise.py#L208)):
+**Code** (original bahamas: [psd_noise.py:125](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_strain/psd_noise.py#L125), [psd_noise.py:189](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_strain/psd_noise.py#L189); ours, fixed: [psd_noise.py:142](../bahamas/psd_strain/psd_noise.py#L142), [psd_noise.py:208](../bahamas/psd_strain/psd_noise.py#L208)):
 
 ```math
 8\,C_{XX}\,(1 + 2\cos w)
@@ -228,7 +232,7 @@ The segment length uses the whole `start` array instead of `start[i]`, so gapped
 
 **Intended:** $N_i = (t^{\rm end}_i - t^{\rm start}_i)/\Delta t$.
 
-**Code before** ([bahamas_data.py:193](../bahamas/bahamas_data.py#L193)):
+**Code** (original bahamas: [bahamas_data.py:191](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/bahamas_data.py#L191); ours, fixed: [bahamas_data.py:193](../bahamas/bahamas_data.py#L193)):
 
 ```python
 N = (self.end[i] - self.start) // self.dt
@@ -251,7 +255,7 @@ next gap. Not in the paper.
 
 **Intended:** segment $= [t_{\rm start},\ \min(t_{\rm start} + T_{\rm sched},\ t_{\rm stretch\ end})]$.
 
-**Code before** ([gaps.py:84-87](../bahamas/method/gaps.py#L84-L87)): segment $= [t_{\rm start},\ t_{\rm start} + T_{\rm sched}]$.
+**Code** (original bahamas: [gaps.py:65-69](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/method/gaps.py#L65-L69); ours, fixed: [gaps.py:78-88](../bahamas/method/gaps.py#L78-L88)): segment $= [t_{\rm start},\ t_{\rm start} + T_{\rm sched}]$.
 
 **Fix.** Clip the segment at the end of its stretch. Also use the stretches before the first and after the last gap, and
 drop excess gaps at random rather than from the end.
@@ -280,7 +284,7 @@ The code rotated the envelope amplitudes and powers. The paper rotates the signa
 (h_A, h_E) \to R\big[2(\beta_0-\alpha_0)\big]\,(h_A, h_E)
 ```
 
-**Code before** ([modulation.py](../bahamas/psd_response/modulation.py), [average_envelope.py](../bahamas/psd_response/average_envelope.py)):
+**Code** (original bahamas: [modulation.py:206-207](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/modulation.py#L206-L207), [average_envelope.py:222-223](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/average_envelope.py#L222-L223), [average_envelope_num.py:194-195](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/average_envelope_num.py#L194-L195); ours, fixed: [modulation.py:92](../bahamas/psd_response/modulation.py#L92), [average_envelope.py:104](../bahamas/psd_response/average_envelope.py#L104), [average_envelope_num.py:169](../bahamas/psd_response/average_envelope_num.py#L169)):
 
 ```math
 A = \big|\cos 2(\beta_0-\alpha_0)\,A_0 - \sin 2(\beta_0-\alpha_0)\,E_0\big|
@@ -314,7 +318,7 @@ In the chunk average of the $n = 4$ term, `FourphiNbar` (already $4\bar l$) was 
 \frac{\sin(4a - 4\bar l - 4\Omega t_1) - \sin(4a - 4\bar l - 4\Omega t_2)}{4\Omega T}
 ```
 
-**Code before** ([average_envelope_num.py:183](../bahamas/psd_response/average_envelope_num.py#L183)): $\sin(4a - 16\bar l - 4\Omega t_1) - \dots$
+**Code** (original bahamas: [average_envelope_num.py:176](https://github.com/FedericoPozzoli/bahamas/blob/8441c32109eb5fa9f8bd0038d1a66f68cea61466/bahamas/psd_response/average_envelope_num.py#L176); ours, fixed: [average_envelope_num.py:183](../bahamas/psd_response/average_envelope_num.py#L183)): $\sin(4a - 16\bar l - 4\Omega t_1) - \dots$
 
 **Fix.**
 
