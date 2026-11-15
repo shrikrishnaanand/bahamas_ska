@@ -139,7 +139,10 @@ def run_inference(config, sources):
     posterior = WaveletPosterior(like, sources, modulation=modulation, gen2=bool(config.get('gen2', False)),
                                  wavelet_shape=icfg.get('wavelet_shape', 'gaussian'),
                                  level_range=tuple(icfg.get('level_range', (-2.0, 2.0))),
-                                 max_wavelets=max_wavelets)
+                                 max_wavelets=max_wavelets,
+                                 fix_first_level=bool(icfg.get('fix_first_level', False)),
+                                 legendre_degree=int(icfg.get('legendre_degree', 4)),
+                                 coeff_range=tuple(icfg.get('coeff_range', (-3.0, 3.0))))
 
     sampler_name = icfg.get('sampler', 'eryn')
     if sampler_name == 'eryn':

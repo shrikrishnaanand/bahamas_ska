@@ -28,19 +28,22 @@ wavelet: #section dedicated to the WDM representation
   band_samples: 8 #sub-samples per pixel to band-average the PSD
 
 inference: #section dedicated to the inference process
-  sampler: 'eryn' #'eryn' (any modulation, required for 'wavelets') or 'NUTS' (NumPyro; 'parametric' and 'none' only)
+  sampler: 'eryn' #'eryn' (any modulation, required for 'wavelets') or 'NUTS' (NumPyro; 'legendre', 'parametric' and 'none')
   #warmup: 1000 #NUTS only: warmup samples
   #samples: 2000 #NUTS only: samples
   #chains: 1 #NUTS only
   #chain_method: 'parallel' #NUTS only
   #adapt_matrix: True #NUTS only
-  modulation: 'wavelets' #'wavelets' (reversible jump over the number of atoms), 'parametric' (sky envelope), 'none'
+  modulation: 'wavelets' #'wavelets' (reversible jump over the number of atoms), 'legendre' (fixed-degree Legendre series in log P), 'parametric' (sky envelope), 'none'
+  legendre_degree: 4 #'legendre' only: highest degree N, log P_c = b_c + sum_{n=1}^N c_n P_n(x) over the window
+  coeff_range: [-3, 3] #'legendre' only: prior range of the coefficients c_n
   wavelet_shape: 'gaussian' #atom shape in log P(t): 'gaussian' or 'ricker'
   min_wavelets: 0 #minimum number of atoms per channel
   max_wavelets: 15 #maximum number of atoms per channel (raise it if the posterior piles up here)
   width_range_days: [5, 180] #prior range of atom widths in days (log-uniform)
   amp_range: [-3, 3] #prior range of atom amplitudes in log P
-  level_range: [-2, 2] #prior range of the log level of channels after the first
+  level_range: [-2, 2] #prior range of the log level b_c of every channel
+  fix_first_level: false #true: level of the first channel fixed to 0
   atom_step: 0.02 #random-walk step of the atoms (fraction of the prior width)
   nwalkers: 32 #walkers per temperature
   ntemps: 2 #temperatures (tempering helps the reversible jump mix)

@@ -51,8 +51,10 @@ antenna pattern sweeps across the Galaxy. This work develops a wavelet-domain
 analysis of that modulation. Part~I reviews the time--frequency (``chunked'') Fourier
 analysis of \Pone\ and the envelope model of \Ptwo. Part~II builds the
 Wilson--Daubechies--Meyer (WDM) alternative from scratch, models the modulation with a
-variable number of Gaussian atoms sampled by reversible-jump MCMC, and shows that the
-wavelet Gamma likelihood is \PoneEq{9} written in another domain; the derivation
+variable number of Gaussian atoms sampled by reversible-jump MCMC, introduces a
+fixed-degree Legendre series in time as a simpler alternative, explains the exact
+degeneracy between the Galactic amplitude and the level of the modulation, and shows
+that the wavelet Gamma likelihood is \PoneEq{9} written in another domain; the derivation
 exposes a missing factor of two in the degrees of freedom of that equation. Part~III
 shows how data gaps are handled in the WDM domain: the damaged pixels are left out of
 the likelihood, which is exact because the pixels are independent. Part~IV introduces
@@ -866,9 +868,12 @@ $K_j$ is itself a parameter, and each channel has its own atoms.
 
 \paragraph{What is measured.} The Galaxy enters the data only through
 $S^{\rm GF}(f)\,P_j(t)\propto A\,P_j(t)$, with $A=10^{\rm amp}$ the Galactic
-amplitude. The constant $b_A$ is therefore degenerate with the amplitude and is fixed
-to $0$; $b_E$ stays free and measures the E level relative to A. Even then, an atom
-much wider than the data is almost a constant that the amplitude can absorb. Only the
+amplitude. The constant $b_A$ is therefore exactly degenerate with the amplitude:
+raising $b_A$ and lowering amp by the same amount changes nothing. $b_E$ is not
+degenerate in the same way; together with $b_A$ it sets the E level relative to A.
+This degeneracy, what it does to the priors, and the two ways the code deals with it
+(sample $b_A$, or fix it to 0) are the subject of \cref{sec:level}. On top of it, an
+atom much wider than the data is almost a constant that the level can absorb. Only the
 product $A\,P_j(t)$ is identified, and that is the quantity compared with the truth.
 
 \subsection{Run 1: can the atoms be recovered?}
@@ -894,6 +899,434 @@ is fitted: a set of atoms proposed by the sampler \emph{defines} $P_j(t)$ throug
 data. Run~2 then injects the true envelope $M_j^2(t)$, which no finite set of atoms
 represents exactly, and analyses the same data with the chunked model of Part~I for
 comparison.
+
+%============================================================================
+\section{An alternative model: a Legendre series in time}\label{sec:legendre}
+%============================================================================
+
+\subsection{The model}
+
+Over 30 days the true envelope has no local features. It is a smooth rise (in A from
+1.8 to 3.9, in E a shallow dip followed by a rise; \cref{fig:fitcurve30}). The
+natural way to describe a smooth curve on a finite interval is a polynomial. The
+second model of $P_j(t)$ in \texttt{bahamas} therefore writes its logarithm as a
+constant plus a short series of Legendre polynomials:
+\begin{equation}
+  \ln P_j(t) = b_j + \sum_{n=1}^{N} c_{j,n}\,L_n(x),
+  \qquad
+  x = \frac{2\,(t-t_0)}{T_{\rm w}} - 1 .
+  \label{eq:legendre}
+\end{equation}
+Here $L_n$ is the Legendre polynomial of degree $n$. It is usually written $P_n$; we
+write $L_n$ so that it is not confused with the modulation $P_j(t)$ or the noise
+parameter $P$. These are the same polynomials that appear on the sky in Part~IV, but
+here they are functions of \emph{time}. The time $t_0$ is the centre of the first WDM
+time column and $T_{\rm w}=N_t\,\Delta T$ the span of all columns, so $x$ runs from
+$-1$ at the start of the data to $+1$ at the end. Rescaling time to $[-1,1]$ is what
+makes the properties below hold.
+
+The sampled parameters are, for each channel, the level $b_j$ and the $N$
+coefficients $c_{j,1},\dots,c_{j,N}$. The degree $N$ is \emph{fixed} in advance (a
+setting, not a parameter), so the model has a fixed number of parameters, $2(N+1)$
+for A and E together. As for the atoms, the model is written for $\ln P$, so that
+$P_j(t)>0$ for any coefficients.
+
+\subsection{Legendre polynomials and why they are a good basis}
+
+The first five are
+\begin{equation}
+  L_0=1,\quad L_1=x,\quad L_2=\tfrac12(3x^2-1),\quad L_3=\tfrac12(5x^3-3x),\quad
+  L_4=\tfrac18(35x^4-30x^2+3),
+\end{equation}
+and the rest follow from Bonnet's recurrence,
+\begin{equation}
+  (n+1)\,L_{n+1}(x) = (2n+1)\,x\,L_n(x) - n\,L_{n-1}(x).
+  \label{eq:bonnet}
+\end{equation}
+The code evaluates \cref{eq:bonnet} directly (\texttt{legendre\_basis} in
+\texttt{bahamas/wavelet/model.py}): a few multiplications per degree, written in
+\texttt{jax}, so it is compiled together with the likelihood and can be
+differentiated. $L_0=1$ is left out of the sum in \cref{eq:legendre} because its
+coefficient is the level $b_j$. Three properties matter here.
+\begin{enumerate}
+  \item \textbf{They are bounded.} On $[-1,1]$, $|L_n(x)|\le1$, with $L_n(1)=1$ and
+        $L_n(-1)=(-1)^n$. A coefficient $c_{j,n}$ therefore changes $\ln P_j$ by at most
+        $|c_{j,n}|$ anywhere in the window, i.e.\ it multiplies the Galactic power by a
+        factor between $e^{-|c|}$ and $e^{|c|}$. This makes the prior easy to set: the
+        default range $[-3,3]$ allows factors up to $e^3\approx20$, far more than the
+        envelope needs (the 30-day fit has $|c|\le0.41$).
+  \item \textbf{They are orthogonal.}
+        \begin{equation}
+          \int_{-1}^{1} L_n(x)\,L_m(x)\,\dd x = \frac{2}{2n+1}\,\delta_{nm}.
+          \label{eq:legortho}
+        \end{equation}
+        Two consequences follow. First, with $m=0$: every $L_n$ with $n\ge1$ averages
+        to zero over the window. So the time average of \cref{eq:legendre} over the
+        window is exactly $b_j$: \emph{the level is the average of $\ln P_j$}, i.e.\
+        $e^{b_j}$ is the geometric-mean modulation over the window. (In the 30-day fit,
+        $b_A=0.94$, $e^{0.94}=2.56$, between the start value 1.8 and the end value 3.9.)
+        Second, the coefficients are close to independent. Plain powers
+        $1,x,x^2,x^3,\dots$ describe the same curves, but on a short interval they look
+        alike (on $[0,1]$ all of them rise), so their coefficients trade against each
+        other and a sampler crawls along long correlated valleys. The Legendre
+        polynomials are exactly what one gets by making the powers orthogonal
+        (Gram--Schmidt), so they span the \emph{same} curves in better coordinates.
+        The orthogonality holds for an even weighting of time; the likelihood weights
+        the blocks by how much they constrain $P_j$, so in the posterior the
+        coefficients are not exactly uncorrelated, but much less correlated than
+        powers would be.
+  \item \textbf{The degree sets the time scale.} $L_n$ has $n$ zeros inside the
+        window, so it varies on a time scale of about $T_{\rm w}/n$. A series up to
+        degree $N$ can follow features down to roughly $T_{\rm w}/N$ and no shorter. Over
+        30 days, $N=3$ reaches about 10 days, which is ample for the smooth envelope.
+\end{enumerate}
+
+\subsection{How it differs from the atoms}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\footnotesize
+\begin{tabular}{@{}p{3.6cm}p{5.4cm}p{5.4cm}@{}}
+\toprule
+ & atoms (\cref{eq:atoms}) & Legendre series (\cref{eq:legendre}) \\
+\midrule
+building blocks & local Gaussian bumps & global polynomials, each spanning the whole window \\
+parameters per channel & $3K_j+1$, with $K_j$ sampled & $N+1$, with $N$ fixed \\
+dependence of $\ln P$ on the parameters & non-linear (centre, width) & linear in $b_j$ and $c_{j,n}$ \\
+sampler & \texttt{eryn} with reversible jump & \texttt{eryn} (no jumps) or NUTS \\
+uniqueness & atoms can swap labels; $K$ not identifiable; wide atom $\approx$ level & each curve has one set of coefficients \\
+a local feature & one extra atom where it is & changes all coefficients; needs a high degree \\
+meaning of $b_j$ & level where all atoms vanish & average of $\ln P_j$ over the window \\
+outside the window & decays back to $b_j$ & grows quickly; not used \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{What is gained.} Because $\ln P_j$ is linear in the parameters, the
+likelihood surface in $(b_j,c_{j,n})$ is smooth and, when the data are informative,
+close to Gaussian. Its gradient is cheap, so the model can be sampled with NUTS
+(\cref{sec:inference}), like the fixed-dimension models of Part~I. The number of
+parameters is fixed, so no birth and death moves are needed; in our atom runs those
+moves are accepted only 0.7--1\% of the time, which is the main limit on how fast the
+reversible-jump chain mixes. There is no label switching and no question of how many
+components there are. For the 30-day envelope it also needs fewer parameters than the
+atoms (\cref{sec:fitcurve}).
+
+\paragraph{What is lost.} The degree must be chosen in advance; the model cannot add
+detail where the data ask for it. A polynomial is global: a feature that is local in
+time (for example a bright patch passing through a lobe of the antenna pattern, or a
+glitch) can only be fitted by changing every coefficient, and a series that is too
+short then over- and undershoots around it. The errors of a polynomial fit are largest
+at the two ends of the window (\cref{fig:fitcurve30,fig:fitcurve1yr}), and outside the
+window a polynomial grows quickly, so it says nothing there. The Legendre series is
+therefore suited to a smooth envelope over a window short compared with its cycle; the
+atoms to local features and long windows.
+
+\paragraph{Gaps.} Like the atoms, \cref{eq:legendre} defines $P_j(t)$ at every time
+in the window, so a masked gap (Part~III) needs no special treatment: the
+coefficients are measured from the kept blocks and the polynomial continues through
+the gap. The bridge is smooth as long as the gap is short compared with
+$T_{\rm w}/N$; a degree high enough to wiggle inside the gap would leave the curve
+there poorly constrained.
+
+\subsection{Implementation}
+
+\begin{itemize}
+  \item \texttt{LegendreModulation} (\texttt{bahamas/wavelet/model.py}) holds $t_0$,
+        $T_{\rm w}$ and $N$. Its method \texttt{x(t)} maps times onto $[-1,1]$,
+        \texttt{log\_modulation} evaluates \cref{eq:legendre} for one channel, and a
+        call returns $P_j(t)$ for all channels.
+  \item \texttt{WaveletPosterior} with \texttt{modulation: legendre} adds the levels
+        \texttt{b\_A}, \texttt{b\_E} (\cref{sec:level}) and the coefficients
+        \texttt{c1\_A}, \dots, \texttt{c<N>\_A}, \texttt{c1\_E}, \dots\ to the
+        \texttt{psd} branch, next to the spectral parameters. There are no
+        reversible-jump branches, so the model runs with \texttt{eryn} (stretch moves
+        only) or with \texttt{run\_nuts}. Everything else, the data, the WDM grouping,
+        the band-averaged spectra and the Gamma likelihood, is shared with the atom
+        model: $P_j$ is evaluated at the block times $\bar t_s$ and enters
+        \cref{eq:siggroup} in the same way.
+  \item Settings in the \texttt{inference} section of the configuration:
+        \begin{center}
+        \footnotesize
+        \begin{tabular}{@{}lll@{}}
+        \toprule
+        key & meaning & default \\
+        \midrule
+        \texttt{modulation} & \texttt{'legendre'} selects this model & \texttt{'wavelets'} \\
+        \texttt{legendre\_degree} & highest degree $N$ & 4 \\
+        \texttt{coeff\_range} & uniform prior of every $c_{j,n}$ & $[-3,3]$ \\
+        \texttt{level\_range} & uniform prior of $b_A$, $b_E$ & $[-2,2]$ \\
+        \texttt{fix\_first\_level} & fix $b_A=0$ (\cref{sec:level}) & \texttt{false} \\
+        \texttt{sampler} & \texttt{'eryn'} or \texttt{'NUTS'} & \texttt{'eryn'} \\
+        \bottomrule
+        \end{tabular}
+        \end{center}
+  \item Tests (\texttt{tests/test\_wavelet\_legendre.py}): the recurrence agrees with
+        \texttt{numpy.polynomial.legendre} up to degree 6; the window is mapped onto
+        $[-1,1]$; and NUTS recovers known coefficients (degree 2, one channel) from data
+        drawn from the model variance, all within $4\sigma$.
+\end{itemize}
+
+\subsection{How well does each model describe the true envelope?}\label{sec:fitcurve}
+
+Before any inference, a simple question decides whether a model is worth sampling: can
+it draw the true envelope at all, and with how many parameters? The curve-fit study
+(\texttt{simulations/common/fit\_curve.py}) answers it with no noise and no sampler.
+For each channel it fits $\ln M_j^2(t)$, sampled hourly over the analysis window, with
+both models:
+\begin{itemize}
+  \item \textbf{atoms}: the procedure of run~1 (\cref{sec:atoms}): non-linear least
+        squares (L-BFGS-B), each $K$ started from the $K-1$ solution plus random
+        restarts, with the small amplitude penalty;
+  \item \textbf{Legendre}: linear least squares, one matrix solve. There is no starting
+        point and the answer is unique, which is another practical advantage of a
+        linear model.
+\end{itemize}
+Each model keeps the smallest $K$ or $N$ whose rms error in $P$ is below 1\%, the rule
+used for the run-1 injection.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+ & & \multicolumn{2}{c}{atoms} & \multicolumn{2}{c}{Legendre} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+window & channel & $K$ (params) & rms / max $|\Delta P/P|$ & $N$ (params) & rms / max $|\Delta P/P|$ \\
+\midrule
+30 days & A & 2 (7) & 0.19\% / 0.52\% & 3 (4) & 0.17\% / 0.48\% \\
+        & E & 1 (4) & 0.11\% / 0.40\% & 2 (3) & 0.13\% / 0.50\% \\
+1 year  & A & 5 (16) & 0.51\% / 3.4\% & 19 (20) & 0.80\% / 2.8\% \\
+        & E & 4 (13) & 0.78\% / 5.1\% & 15 (16) & 0.94\% / 3.6\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fit_curve_30d_compare.png}
+\caption{Curve-fit study, 30 days. Top: the true envelope $M_j^2(t)$ (grey), the atom
+fit (blue dashed) and the Legendre fit (orange dotted). Middle: relative error of each
+fit. Bottom: rms error against the number of parameters per channel (atoms $3K+1$,
+Legendre $N+1$); the circled points are the selected fits, the dashed line the 1\%
+target. Produced by \texttt{simulations/common/fit\_curve.py}.}
+\label{fig:fitcurve30}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fit_curve_1yr_compare.png}
+\caption{As \cref{fig:fitcurve30}, over one year (365\,d window).}
+\label{fig:fitcurve1yr}
+\end{figure}
+
+\paragraph{30 days} (\cref{fig:fitcurve30}). Both models reach the target with errors
+of the same size, largest at the two ends of the window, but the Legendre series
+needs fewer parameters: 4 instead of 7 in A and 3 instead of 4 in E. With more terms
+the two behave very differently (bottom row). The Legendre error keeps falling, by
+roughly a factor of ten for every one or two extra degrees, and reaches the numerical
+precision ($10^{-13}$) around $N=20$. The atom error stops falling at about 0.03\%,
+because no finite sum of Gaussians is exactly this curve. The reason for the fast
+Legendre convergence is that the envelope is a very smooth function (a sum of eight
+harmonics of 1/yr), and smooth functions are what polynomials approximate best.
+
+\paragraph{1 year} (\cref{fig:fitcurve1yr}). Over a year the envelope has two large
+lobes. Now the atoms are more economical at the 1\% target (16 against 20 parameters
+in A, 13 against 16 in E): each lobe is close to one bump, while a polynomial needs a
+high degree to rise and fall twice. The Legendre error oscillates across the whole
+window, and both fits are worst at the ends. Beyond about 25 parameters the Legendre
+series again overtakes the atoms. Over four years (eight lobes) a single polynomial
+would need a much higher degree still; there the natural choices are one series per
+segment, or a Fourier series in harmonics of 1/yr, which is what the envelope is made
+of. Neither is implemented.
+
+\paragraph{The FFT and WDM views.} For each fit the study also plots the Fourier
+spectrum and the WDM map of the true curve, the fit and their difference (in
+\texttt{simulations/<study>/fit\_curve/}). The envelope's own content lies below
+8~cycles/yr $=2.5\times10^{-7}$\,Hz. Over 30 days that is below the first FFT bin, and
+both transforms, which treat the window as periodic, are dominated by the jump where
+the end of the curve wraps onto its start. The informative panels are those of the
+difference: they show where in time and frequency each fit misses, and confirm that
+the misses sit at the window ends.
+
+\paragraph{Status.} The Legendre model is implemented and tested, and this study shows
+that it describes the 30-day envelope with fewer parameters than the atoms. It has
+not yet been used in an injection run; all runs of Part~V use the atoms. The next
+step is runs~1 and 2 with $N=3$--4, sampled with NUTS, and a comparison of the
+galactic brightness bands with those of the atoms and of the chunked model.
+
+%============================================================================
+\section{The overall level of the modulation and the Galactic amplitude}\label{sec:level}
+%============================================================================
+
+Both free models of $P_j(t)$, the atoms and the Legendre series, contain a constant
+level $b_j$ per channel. This section explains why $b_A$ and the Galactic amplitude
+cannot be measured separately, what this does to the priors, and how the code deals
+with it.
+
+\subsection{What the data measure}
+
+By \cref{eq:sft} the Galaxy enters the variance of every pixel as
+$P_j(t)\,S^{\rm GF}(f)$. Split each model into its level and the rest,
+$P_j(t)=e^{b_j}\,m_j(t)$, where $m_j(t)$ is the exponential of the atom sum or of the
+Legendre sum. Write $S^{\rm GF}(f)=10^{\rm amp}\,s(f)$, where $s(f)$ is the spectral
+shape of \cref{eq:sgf}. Note that amp is a $\log_{10}$ and $b_j$ a natural
+logarithm, so $e^{b}=10^{\,b/\ln10}$. Then
+\begin{align}
+  \text{channel A:}\qquad P_A(t)\,S^{\rm GF}(f) &= 10^{\,{\rm amp}+b_A/\ln10}\;m_A(t)\,s(f),\\
+  \text{channel E:}\qquad P_E(t)\,S^{\rm GF}(f) &= 10^{\,{\rm amp}+b_E/\ln10}\;m_E(t)\,s(f).
+\end{align}
+The code uses one Galactic spectrum for both channels, so the only difference between
+A and E is in $b_j$ and $m_j(t)$. The data therefore see amp, $b_A$ and $b_E$ only
+through two numbers, the $\log_{10}$ Galactic level of each channel:
+\begin{equation}
+  \ell_A = {\rm amp} + \frac{b_A}{\ln10},\qquad
+  \ell_E = {\rm amp} + \frac{b_E}{\ln10}.
+  \label{eq:levels}
+\end{equation}
+Equivalently: $\ell_A$ (called amp$_{\rm eff}$ in the code) and the E/A ratio
+$\ell_E-\ell_A=(b_E-b_A)/\ln10$.
+
+Three parameters, two measured numbers: one direction in parameter space changes
+nothing. For any $d$,
+\begin{equation}
+  ({\rm amp},\,b_A,\,b_E)\ \longrightarrow\ \Big({\rm amp}+\frac{d}{\ln10},\ b_A-d,\ b_E-d\Big)
+  \label{eq:ridge}
+\end{equation}
+leaves $\ell_A$ and $\ell_E$, and with them the likelihood, exactly unchanged. In the
+three-dimensional space of (amp, $b_A$, $b_E$) the likelihood is constant along a line,
+a flat ``ridge''. A unit test in \texttt{tests/test\_wavelet\_rj.py} moves along it and finds the log-likelihood
+unchanged to a relative $10^{-10}$.
+
+This is not a weakness of the data. The free models have no rule that fixes how large
+$P_j$ is on average, so ``how bright is the Galaxy'' and ``how large is $P_A$'' are the
+same question. In the sky model of Part~I the size of $P_j(t)=M_j^2(t)$ follows from
+the geometry of the antenna pattern, so there amp \emph{is} the Galactic amplitude. In
+the free models its value is a convention.
+
+\subsection{A picture with two parameters}
+
+The idea is clearest with two parameters, $A$ and $B$, and data that measure only
+their sum $A+B$ (\cref{fig:rotation}). With independent uniform priors on $A$ and $B$
+(the square), the posterior is a thin diagonal band: all points with the same $A+B$
+fit equally well. Looked at one at a time, $A$ and $B$ both seem unconstrained, but
+they are almost perfectly anti-correlated.
+
+Now turn the axes by $45^\circ$, i.e.\ use $(A+B)/\sqrt2$ and $(B-A)/\sqrt2$ instead
+of $A$ and $B$. Nothing changes except the coordinates: the same points, the same
+prior (the square becomes a diamond), the same likelihood. But now the two jobs are
+separated: $A+B$ is tightly measured, its width is the likelihood width, while $B-A$
+is not measured at all and spreads over whatever the prior allows; the correlation
+disappears. \emph{The rotation does not create information.} It puts the part the
+data measure on one axis and the part they do not on the other. Once separated, the
+unmeasured part can either be dropped (fixed to a value) or sampled and ignored. In
+our problem $A\leftrightarrow{\rm amp}$, $B\leftrightarrow b_A/\ln10$, and the
+measured sum is $\ell_A$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/degeneracy_rotation.png}
+\caption{(a) Toy posterior when only $A+B$ is measured ($A+B=1\pm0.15$), with
+independent uniform priors on $A$ and $B$ (square); red dashed lines: $\pm2\sigma$ of
+the likelihood. (b) The same samples with the axes turned by $45^\circ$: one axis is
+measured, the other is set by the prior alone. (c) The prior that independent uniform
+priors on amp and $b_A$ imply for the measured sum $\ell_A={\rm amp}+b_A/\ln10$; it is
+flat only in the shaded range. Red: the run-1 injected value. Produced by
+\texttt{simulations/degeneracy\_gifs/rotation\_toy.py}, which also makes an animated
+version.}
+\label{fig:rotation}
+\end{figure}
+
+\subsection{What it does to the priors}
+
+Every sampled parameter has its own uniform prior, independent of the others: amp
+in $[-47,-40]$ and $b_A$ in \texttt{level\_range}, $[-3,3]$ in the runs, so
+$b_A/\ln10\in[-1.30,1.30]$. The measured number $\ell_A$ is the \emph{sum} of the two.
+The prior of a sum of two independent uniform variables is not uniform: it is the
+convolution of two boxes, a trapezoid (\cref{fig:rotation}c). It is flat only where
+the whole range of $b_A$ fits inside the amp range,
+\begin{equation}
+  -47+1.30\ \le\ \ell_A\ \le\ -40-1.30,\qquad\text{i.e.}\quad \ell_A\in[-45.70,\,-41.30],
+\end{equation}
+and falls linearly to zero over 1.30 on each side. Geometrically: the prior weight of
+a value of $\ell_A$ is the length of the line ${\rm amp}+b_A/\ln10=\ell_A$ inside the
+prior box, and near the corners that line is short.
+
+So by putting separate priors on amp and $b_A$ we have \emph{also} put a prior on the
+measured quantity $\ell_A$, without choosing it. In the runs of this note it has no
+effect: the injected $\ell_A=-43.42$ lies in the flat part, more than 2 away from
+either ramp, while the likelihood measures $\ell_A$ to a few hundredths. But it would
+matter if the true level were near the edges, or with a wider \texttt{level\_range}.
+
+Two more consequences are worth knowing when reading a corner plot:
+\begin{itemize}
+  \item once $\ell_A$ is measured, the posterior of the raw amp is flat over
+        $\ell_A\pm1.30$, i.e.\ 2.6 wide, and that width comes entirely from the prior
+        of $b_A$. A wide amp posterior is expected and is not a failure of the run;
+  \item not every combination can have a flat prior at the same time. If amp and $b_E$
+        are uniform, the E level $\ell_E={\rm amp}+b_E/\ln10$ is again a sum and has a
+        trapezoid prior. One has to choose which quantities get the flat prior; the
+        sensible choice is the ones the data measure.
+\end{itemize}
+
+\subsection{The two parametrisations in the code}
+
+\begin{center}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{3.2cm}p{5.6cm}p{5.6cm}@{}}
+\toprule
+ & \texttt{fix\_first\_level: true} & \texttt{fix\_first\_level: false} \\
+\midrule
+sampled levels & $b_E$ only ($b_A\equiv0$) & $b_A$ and $b_E$ \\
+meaning of amp & $\ell_A$, the A level & not measured on its own; $\ell_A={\rm amp}+b_A/\ln10$ \\
+meaning of $b_E$ & $\ln10\,(\ell_E-\ell_A)$, the E/A ratio (natural log) & together with $b_A$: E/A ratio $=b_E-b_A$ \\
+flat direction & none & the line of \cref{eq:ridge} \\
+prior of $\ell_A$ & uniform, $[-47,-40]$ & trapezoid (\cref{fig:rotation}c) \\
+compare with the truth & amp and $b_E$ directly & only $\ell_A$, $b_E-b_A$, or the galactic brightness \\
+used by & the runs of Part~V (earlier code) & current default (code, template, 30-day and 1-year configs) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Setting $b_A=0$ is not an assumption about the Galaxy.} Any value of $b_A$
+gives exactly the same fit, because amp absorbs it (\cref{eq:ridge}). Fixing it is
+like choosing where zero sits on a ruler. What is removed with it is the prior of
+$b_A$, which was never informed by the data; its only effect was to bend the prior of
+$\ell_A$ into a trapezoid. With $b_A=0$ the uniform prior sits directly on the
+measured level. In that sense \texttt{fix\_first\_level: true} is the same as sampling
+$(\ell_A,\ b_E-b_A)$, two parameters for two measured numbers. (Sampling
+$(\ell_A,b_A,b_E)$ instead does not help: then the E level depends on $b_E-b_A$, and
+the flat direction and the trapezoid simply move to E.)
+
+What \emph{does} change with the convention is the meaning of amp. It is no longer
+the Galactic amplitude of Part~I, so it must not be compared with the injected amp of
+the sky model. For the Legendre series, $b_A=0$ means that the average of $\ln P_A$
+over the window is 0 (property 2 of \cref{sec:legendre}), so amp is the $\log_{10}$ of
+the time-averaged (geometric mean) Galactic level in A: a clean definition. For the
+atoms, $b_A=0$ fixes the level where all atoms vanish; Gaussian atoms do not average
+to zero, so this level shifts with the atoms, and a very wide atom can still trade
+with it. A cleaner rule for the atoms would be to normalise $P_A(t)$ to a time
+average of 1 and compute $b_A$ from the atoms instead of sampling it. This is not
+implemented.
+
+\paragraph{The run-1 injection.} The reference fit of the atoms to the true envelope
+(\texttt{simulations/common/fit\_reference.py}) returns a level $b_A$ and $b_E$ per
+channel and is made with the true amp. It is then moved along the ridge,
+\cref{eq:ridge} with $d=b_A$, to the point with $b_A=0$:
+\begin{equation}
+  {\rm amp}\ \to\ {\rm amp}_{\rm eff}={\rm amp}+\frac{b_A}{\ln10},\qquad
+  b_A\ \to\ 0,\qquad b_E\ \to\ b_E-b_A .
+\end{equation}
+The check: $\ell_A={\rm amp}_{\rm eff}$ and
+$\ell_E={\rm amp}_{\rm eff}+(b_E-b_A)/\ln10={\rm amp}+b_E/\ln10$, both unchanged. For
+run~1, amp$_{\rm eff}=-43.417$. This is the injected point in both parametrisations;
+with $b_A$ sampled it is just one point on the line, and a posterior of the raw amp or
+$b_A$ away from it is not a bias.
+
+\paragraph{The runs of Part~V} were made with the earlier code, which always fixed
+$b_A=0$ (\texttt{fix\_first\_level: true} today). The E level was then called
+\texttt{level\_E}; it is the same parameter as today's $b_E$. Their results do not
+depend on this choice, since they are compared through the galactic brightness.
 
 %============================================================================
 \section{From the STFT to the WDM transform}\label{sec:wdm}
@@ -1551,9 +1984,9 @@ Both are to be discussed with the authors before the library is changed.
 
 \subsection{The posterior}
 
-The parameters are the spectral ones,
-$\theta_{\rm s}=\{\alpha,\mathrm{amp},f_{\rm knee},f_1,f_2,A_{\rm n},P,b_E\}$, and for
-each channel the number of atoms $K_j$ and the atoms
+The parameters are the spectral ones together with the levels,
+$\theta_{\rm s}=\{\alpha,\mathrm{amp},f_{\rm knee},f_1,f_2,A_{\rm n},P,b_A,b_E\}$
+($b_A$ only when it is sampled, \cref{sec:level}), and for each channel the number of atoms $K_j$ and the atoms
 $\zeta_{j,k}=(u_{j,k},\log_{10}\tau_{j,k},a_{j,k})$. The posterior is
 \begin{equation}
   p\big(\theta_{\rm s},\{K_j,\zeta_{j,1..K_j}\}\mid\boldsymbol Y\big)\ \propto\
@@ -1616,7 +2049,8 @@ $\sigma^2_{j,sg}$ (\cref{eq:siggroup}); evaluate \cref{eq:wlik} against the froz
 $Y$; accept or reject. Nothing is fitted and no data are redrawn. The likelihood is
 written in \texttt{jax}: compiled, vectorised over walkers and differentiable. The
 fixed-dimension models (no modulation, or the sky envelope of Part~I evaluated at
-$\bar t_s$) can also be sampled with NUTS.
+$\bar t_s$), and the Legendre series of \cref{sec:legendre}, can also be sampled
+with NUTS.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.15}
@@ -1634,13 +2068,17 @@ burn-in / stored steps & --- & 1000 / 5000 & 2000 / 6000 \\
 $K_j$ range (uniform) & 0--8 & 0--15 & 0--8 \\
 atom width $\tau$ (log-uniform) & 5--180\,d & 5--180\,d & 5--60\,d \\
 atom amplitude $a$ (uniform) & $[-3,3]$ & $[-3,3]$ & $[-3,3]$ \\
-level $b_E$ (uniform) & $[-2,2]$ & $[-2,2]$ & $[-3,3]$ \\
+levels $b_A$, $b_E$ (uniform) & $[-2,2]$ & $[-2,2]$ & $[-3,3]$ \\
+$b_A$ (\texttt{fix\_first\_level}) & sampled & sampled & fixed to 0 \\
 atom centre $u$ (uniform) & $[0,1]$ & $[0,1]$ & $[0,1]$ \\
 start & $\theta_{\rm s}$ near injection, $K_j=0$ & same & same \\
 \bottomrule
 \end{tabular}
 \end{center}
-Starting at $K_j=0$ tests whether the sampler finds the modulation by itself. Starting
+The last column is the setting of the runs of Part~V. The 30-day and 1-year
+configurations now sample $b_A$ as well (\cref{sec:level}); new runs made with them
+have one more parameter. Starting at $K_j=0$ tests whether the sampler finds the
+modulation by itself. Starting
 $\theta_{\rm s}$ in a small ball around the injection is a weaker test than a start
 from the prior, and is worth changing in later runs.
 
@@ -1727,18 +2165,23 @@ alternative to masking.
   \item Drop the edge columns and the rows outside the band.
   \item Group pixels into blocks $\times$ log-frequency groups and keep
         $Y_{j,sg}=\sum w^2$ and $\nu_g$ (\cref{eq:Y}). Steps 1--4 are done once.
-  \item For a trial point (spectral parameters, $K_j$ and atoms), compute
-        $P_j(\bar t_s)$ from the atoms and the band-averaged spectra.
+  \item For a trial point (spectral parameters, levels, $K_j$ and atoms), compute
+        $P_j(\bar t_s)$ from the atoms and the band-averaged spectra. (With the
+        Legendre series of \cref{sec:legendre}, $P_j$ comes from its coefficients
+        instead, and $K_j$ is absent.)
   \item Form $\sigma^2_{j,sg}$ (\cref{eq:siggroup}).
   \item Evaluate the Gamma likelihood (\cref{eq:wlik}), which is \PoneEq{9} with the
         correct degrees of freedom.
   \item Let \texttt{eryn} propose the next point, including births and deaths of
-        atoms, and return to step~5.
+        atoms, and return to step~5. (Legendre: \texttt{eryn} without births and
+        deaths, or NUTS.)
 \end{enumerate}
 \end{keybox}
 
 \paragraph{Status.} All injection runs of Part~V use the envelope code with the
-corrections listed in \texttt{reports/PAPER\_BUGS.md}.
+corrections listed in \texttt{reports/PAPER\_BUGS.md}, the atom model, and $b_A$
+fixed to 0 (\cref{sec:level}). The Legendre model is implemented and tested but not
+yet used in a run (\cref{sec:fitcurve}).
 
 \clearpage
 %############################################################################
@@ -1862,6 +2305,12 @@ the gap whether or not there are data. Three consequences follow.
         $\sqrt{1/(1-f_{\rm lost})}$, with $f_{\rm lost}$ the fraction of pixels left
         out, independently of where the gap is.
 \end{enumerate}
+The Legendre series of \cref{sec:legendre} behaves the same way: it is defined at
+every time, its coefficients are measured from the kept blocks only, and the
+polynomial continues through the gap. Its bridge is set by the degree $N$ instead of
+the atom widths, and is smooth as long as the gap is short compared with
+$T_{\rm w}/N$.
+
 When we plot the recovered modulation we show it in two ways: with the gap left blank
 (only where it is measured), or with the posterior band continued through the gap, as
 in \cref{fig:run4mod}, where its width shows how well the atoms bridge it. The chunked
@@ -2196,8 +2645,9 @@ each end and uses 34 blocks of 20\,h $\times$ 174 log-frequency groups in
 is converged: autocorrelation times are at most 8 steps (ESS $\ge24{,}000$) for all
 spectral parameters, $K_j$, $\log\mathcal L$ and $P_j(t)$ at several days.
 
-The atom model's \texttt{amp} absorbs the level $b_A$ and trades against the spectral
-shape, so it is not compared directly. The modulation is compared through the
+All runs fix $b_A=0$, so the atom model's \texttt{amp} is the A-channel level
+amp$_{\rm eff}$ of \cref{sec:level}, not the Galactic amplitude of the sky model; it
+also trades against the spectral shape. It is therefore not compared directly. The modulation is compared through the
 \emph{galactic brightness}: for each posterior sample, its amplitude times its
 spectral shape (averaged over frequency with the weight of where the Galaxy dominates)
 times $P_j(t)$, divided by the injected one. This is the quantity the data constrain.
@@ -2235,8 +2685,9 @@ start of the window, which the prior forbids.
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.8\textwidth]{figures/run1_corner.png}
-\caption{Run~1: posterior of the spectral parameters and \texttt{level\_E}; orange
-lines are the injected values. The double peak in \texttt{amp} is the trade-off with
+\caption{Run~1: posterior of the spectral parameters and \texttt{level\_E} (today
+called $b_E$, \cref{sec:level}); orange lines are the injected values, with amp at
+amp$_{\rm eff}=-43.417$. The double peak in \texttt{amp} is the trade-off with
 the spectral shape and with the atoms.}
 \label{fig:run1corner}
 \end{figure}
@@ -2414,6 +2865,15 @@ comes from.}
         data, the wavelet brightness bands are 12--20\% wider and the time dependence
         alone 1.3--1.5 times wider, mostly at the ends of the window. The spectral
         parameters are measured equally well.
+  \item \textbf{A Legendre series is a simpler alternative for short windows.} Over
+        30 days it describes the true envelope to 1\% with fewer parameters than the
+        atoms (4 against 7 in A, 3 against 4 in E), is linear in its parameters and
+        can be sampled with NUTS. Over a year the atoms are more economical. It has not
+        yet been used in an injection run.
+  \item \textbf{The level of the modulation is a convention.} The Galactic amplitude
+        and the level $b_A$ are exactly degenerate; only their sum is measured.
+        Sampling both puts an unchosen trapezoid prior on the measured level; fixing
+        $b_A=0$ puts a uniform prior on it directly and loses nothing.
   \item \textbf{Gaps are handled exactly by masking.} Leaving out the gap columns and
         one buffer column per side keeps the likelihood exact. A 1-day gap costs almost
         nothing; a 10-day gap widens the spectral parameters as the lost data predict
@@ -2435,8 +2895,21 @@ must describe a periodic signal with many more atoms, and the sky model gains th
 as the normal precesses through 360\textdegree, the ring degeneracy of patch positions
 should break, and the needlet coefficients in bands $j=1,2$ should become measurable.
 The likelihood scales linearly with the number of time blocks and should remain
-cheap; we expect the transdimensional sampling to be the bottleneck. Runs~5b (free positions) and 5c
+cheap; we expect the transdimensional sampling to be the bottleneck. The 1-year
+versions of runs~1--4 are set up (\texttt{simulations/1\_year/}) but not yet run.
+Over a year the curve-fit study (\cref{sec:fitcurve}) needs 4--5 atoms per channel,
+or a Legendre degree of 15--19; over four years a single polynomial is no longer
+sensible, and a series per segment or a Fourier series in harmonics of 1/yr would be
+the natural fixed-dimension model. Runs~5b (free positions) and 5c
 (needlet coefficients) will be done on both time scales.
+
+\paragraph{The Legendre model and the level.} The Legendre series should be tried
+on runs~1 and 2 (degree 3--4, NUTS) and compared with the atoms and the chunks on the
+galactic brightness. How to choose its degree from the data (by the evidence of each
+$N$, or by a prior on the coefficients that shrinks the high degrees) is open. For the
+level, the choice between sampling $b_A$ and fixing it (\cref{sec:level}) should be
+made once for all new runs; for the atoms a normalisation of $P_A(t)$ to a time
+average of 1 would give amp the clearest meaning.
 
 \paragraph{Better handling of gaps.} Runs~3 and 4 place one hard-edged gap in the
 middle of the window. Open tests are: the realistic LISA gap pattern (short scheduled

@@ -30,7 +30,8 @@ inference:
   max_wavelets: 8
   width_range_days: [5.0, 60.0]   # atom width prior [d], log-uniform
   amp_range: [-3.0, 3.0]      # atom amplitude prior (ln P units)
-  level_range: [-3.0, 3.0]    # level_E prior
+  level_range: [-3.0, 3.0]    # prior of b_A and b_E
+  fix_first_level: false      # true: b_A fixed to 0 (the parametrisation of the earlier runs)
   atom_step: 0.02             # proposal scale of the atom moves
   nwalkers: 32
   ntemps: 4

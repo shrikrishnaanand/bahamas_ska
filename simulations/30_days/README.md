@@ -46,6 +46,9 @@ config/
   diagnostics.py             convergence of a wavelet run: autocorrelation times, ESS, stuck walkers
   fit_reference.py           wavelet fit of the true envelope -> outputs/reference/ (atoms.npz = run-1 injection, fit.png)
                              script: python ../common/fit_reference.py   (run(config=...) for other windows)
+  fit_curve.py               curve-fit study: wavelet atoms vs Legendre fit of the true envelope, in time, FFT and WDM
+                             -> fit_curve/ (see fit_curve/README.md); does not touch outputs/reference/
+                             script: python ../common/fit_curve.py   (--config ../1_year/config/wavelet.yaml for 1 year)
   sky_patches.py             run 5 sky: run 2's Gaussian Galaxy as a HEALPix map + patches (config/run5_sky.yaml),
                              P_c(t) from the first-principles response of needlet_patches/sky.py
 checks/                      input and likelihood checks (-> outputs/checks/)
@@ -75,6 +78,8 @@ run5/                        patchy sky: atoms, known patches (5a), needlets (5c
   run5c_needlets.ipynb       visible directions, brightness vs atoms and 5a, excess flux, maps
                              (loads outputs/run5, run5/5a, run5/5c)
 needlet_patches/             needlet identifiability study (stages 0 and 1), see its README
+fit_curve/                   curve-fit study (fit_curve.py): wavelet_atoms/ and legendre/, each with fit.png, fft.png,
+                             wdm.png, fit.npz; compare.png; see its README
 outputs/
   reference/                 atoms.npz, fit.png
   checks/                    data_checks.png, data_checks.npz, dof_check.npz, likelihood_grid.png

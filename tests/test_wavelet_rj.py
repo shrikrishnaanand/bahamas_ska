@@ -89,7 +89,7 @@ def _known_k_data(atoms, seed, amp=-42.5):
     blank = WaveletData(np.ones((1, Nt, Nf)), dt, channels=[0])
     like = WaveletLikelihood(blank, 1e-4, 4.9e-4, edge_bins=0)
     post = WaveletPosterior(like, sources, modulation='wavelets', gen2=True, max_wavelets=KMAX)
-    S_gal, S_n, values = post.spectra(jnp.array([amp, 2.4]))
+    S_gal, S_n, values = post.spectra(jnp.array([amp, 2.4, 0.0]))     # amp, A, b_A
     a, m = _pad_leaves(atoms, np.zeros(len(atoms), int), 1, KMAX)
     P = np.asarray(post.power_modulation(None, (a[0],), (m[0],), values, blank.times))
 
@@ -135,6 +135,26 @@ def test_rj_detects_modulation_from_scratch():
     post = WaveletPosterior(like, sources, modulation='wavelets', gen2=True, max_wavelets=KMAX)
     p = _sampler(post).run(500, burnin=300, progress=False)['mod_A_bayes']['posterior']
     assert np.sum(p[:2]) < 0.01
+
+
+def test_first_level_is_free_and_degenerate_with_amp():
+    """b_A is sampled; only amp + b_A / ln 10 enters the likelihood; fix_first_level restores b_A = 0."""
+    sources, like = _known_k_data(ATOMS, seed=12)
+    a, m = _pad_leaves(ATOMS, np.zeros(len(ATOMS), int), 1, KMAX)
+    atoms, masks = (jnp.asarray(a[0]),), (jnp.asarray(m[0]),)
+    post = WaveletPosterior(like, sources, modulation='wavelets', gen2=True, max_wavelets=KMAX)
+    assert [p.name for p in post.psd_params if p.bounds is not None] == ['amp', 'A', 'b_A']
+    ll = lambda th: float(post.single(jnp.asarray(th), jnp.zeros(0), atoms, masks))
+
+    theta = np.array([-42.5, 2.4, 0.0])
+    d = 0.7
+    assert np.isclose(ll(theta + [d / np.log(10), 0, -d]), ll(theta), rtol=1e-10, atol=0)
+    assert not np.isclose(ll(theta + [0, 0, d]), ll(theta), rtol=1e-6, atol=0)
+
+    fixed = WaveletPosterior(like, sources, modulation='wavelets', gen2=True, max_wavelets=KMAX, fix_first_level=True)
+    assert 'b_A' not in [p.name for p in fixed.psd_params]
+    assert np.isclose(float(fixed.single(jnp.asarray(theta[:2]), jnp.zeros(0), atoms, masks)), ll(theta),
+                      rtol=1e-12, atol=0)
 
 
 def test_max_wavelets_must_match_posterior():

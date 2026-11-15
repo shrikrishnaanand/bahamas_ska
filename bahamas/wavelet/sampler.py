@@ -15,11 +15,15 @@ Eryn branches:
 
 - ``psd``: spectral parameters of the galaxy (``alpha``, ``amp``, ``fknee``,
   ``fr1``, ``fr2``), the instrument noise (``A``, ``P``) and, for wavelet
-  modulation, the log levels of channels after the first. Always one leaf.
+  modulation, the log level ``b_<channel>`` of every channel (``b_A``, ``b_E``). Always one leaf.
 - ``envelope`` (``modulation: parametric`` with sampled sky parameters):
   ``lat``, ``long``, ``s1``, ``s2``, ``psi``. Always one leaf.
 - ``mod_<channel>`` (``modulation: wavelets``): one reversible-jump branch per
   TDI channel whose leaves are wavelet atoms ``(t_frac, log10_width_days, amp)``.
+
+``modulation: legendre`` is fixed-dimension: the levels ``b_<channel>`` and the
+Legendre coefficients ``c<n>_<channel>`` (n = 1..degree) all go into ``psd``, so it
+runs with eryn (no RJ branches) or NUTS.
 
 The posterior over the number of atoms ``K`` gives the Bayes factor between
 models with different ``K`` directly, without a separate evidence computation
@@ -35,7 +39,7 @@ from eryn.prior import ProbDistContainer, uniform_dist
 from eryn.state import State
 from eryn.moves import StretchMove, GaussianMove, DistributionGenerateRJ
 
-from bahamas.wavelet.model import stationary_modulation, parametric_modulation, WaveletModulation
+from bahamas.wavelet.model import stationary_modulation, parametric_modulation, WaveletModulation, LegendreModulation
 from bahamas.wavelet.simulate import ENVELOPE_PARAMS
 from bahamas.logger_config import logger
 
@@ -109,16 +113,23 @@ class WaveletPosterior:
     Args:
         like (WaveletLikelihood): Wavelet-domain likelihood.
         sources (dict): Sources configuration (bounds define the sampled parameters).
-        modulation (str): ``'wavelets'``, ``'parametric'`` or ``'none'``.
+        modulation (str): ``'wavelets'``, ``'legendre'``, ``'parametric'`` or ``'none'``.
         gen2 (bool): Second-generation TDI.
         wavelet_shape (str): Atom shape for ``'wavelets'``.
-        level_range (tuple): Prior range of the per-channel log levels (``'wavelets'`` only).
+        level_range (tuple): Prior range of the per-channel log levels ``b_<channel>`` (``'wavelets'`` only).
+            Every channel's level is sampled, including the first one, which is exactly degenerate with ``amp``
+            (``amp + b_A / ln 10`` is what the data measure).
         max_wavelets (int): Padded number of atoms per channel (``'wavelets'`` only).
+        fix_first_level (bool): Fix the first channel's level to 0 instead of sampling it (the parametrisation
+            of the earlier runs, where it is absorbed into ``amp``).
+        legendre_degree (int): Highest Legendre degree per channel (``'legendre'`` only).
+        coeff_range (tuple): Prior range of the Legendre coefficients ``c<n>_<channel>`` (``'legendre'`` only).
     """
 
     def __init__(self, like, sources, modulation='wavelets', gen2=True, wavelet_shape='gaussian',
-                 level_range=(-2.0, 2.0), max_wavelets=8):
-        if modulation not in ('wavelets', 'parametric', 'none'):
+                 level_range=(-2.0, 2.0), max_wavelets=8, fix_first_level=False,
+                 legendre_degree=4, coeff_range=(-3.0, 3.0)):
+        if modulation not in ('wavelets', 'legendre', 'parametric', 'none'):
             raise ValueError(f"Unknown modulation '{modulation}'")
         self.like = like
         self.gen2 = bool(gen2)
@@ -147,11 +158,19 @@ class WaveletPosterior:
                 else:
                     self.psd_params.append(param)
 
-        if modulation == 'wavelets':
-            for name in self.channel_names[1:]:
-                self.psd_params.append(Parameter('modulation', f'level_{name}', level_range, 0.0))
+        if modulation in ('wavelets', 'legendre'):
+            self.level_names = list(self.channel_names[1:] if fix_first_level else self.channel_names)
+            for name in self.level_names:
+                self.psd_params.append(Parameter('modulation', f'b_{name}', level_range, 0.0))
             times = np.asarray(like.data.times)
-            self.wavelets = WaveletModulation(times[0], times[-1] - times[0] + (times[1] - times[0]), wavelet_shape)
+            t_start, span = times[0], times[-1] - times[0] + (times[1] - times[0])
+            if modulation == 'wavelets':
+                self.wavelets = WaveletModulation(t_start, span, wavelet_shape)
+            else:
+                self.legendre = LegendreModulation(t_start, span, legendre_degree)
+                for name in self.channel_names:
+                    for n in range(1, self.legendre.degree + 1):
+                        self.psd_params.append(Parameter('modulation', f'c{n}_{name}', coeff_range, 0.0))
 
         if not _sampled(self.psd_params):
             raise ValueError("The 'psd' branch needs at least one sampled parameter")
@@ -209,8 +228,15 @@ class WaveletPosterior:
             envelope = _fill(self.envelope_params, theta_env)['galactic_DWD_time']
             return parametric_modulation(times, self.channels, envelope)
         if self.modulation == 'wavelets':
-            levels = [0.0] + [values['modulation'][f'level_{n}'] for n in self.channel_names[1:]]
+            levels = [values['modulation'][f'b_{n}'] if n in self.level_names else 0.0
+                      for n in self.channel_names]
             return self.wavelets(times, atoms, masks, levels)
+        if self.modulation == 'legendre':
+            m = values['modulation']
+            levels = [m[f'b_{n}'] if n in self.level_names else 0.0 for n in self.channel_names]
+            coeffs = [jnp.stack([m[f'c{k}_{n}'] for k in range(1, self.legendre.degree + 1)])
+                      if self.legendre.degree else jnp.zeros(0) for n in self.channel_names]
+            return self.legendre(times, coeffs, levels)
         return stationary_modulation(times, self.channels)
 
     def single(self, theta_psd, theta_env, atoms, masks):
@@ -495,7 +521,7 @@ class WaveletSampler:
 def run_nuts(posterior, warmup=1000, samples=2000, chains=1, chain_method='parallel', adapt_matrix=True,
              init='injected', seed=0, progress=True):
     """
-    Sample a fixed-dimension wavelet model (``parametric`` or ``none``) with NumPyro's NUTS.
+    Sample a fixed-dimension wavelet model (``parametric``, ``legendre`` or ``none``) with NumPyro's NUTS.
 
     Priors are uniform within the source bounds, as in the chunked pipeline.
 
@@ -516,7 +542,8 @@ def run_nuts(posterior, warmup=1000, samples=2000, chains=1, chain_method='paral
     from numpyro.infer import MCMC, NUTS, init_to_uniform, init_to_value
 
     if posterior.modulation == 'wavelets':
-        raise ValueError("A variable number of wavelets needs reversible jump: use sampler 'eryn'")
+        raise ValueError("A variable number of wavelets needs reversible jump: use sampler 'eryn' "
+                         "(or modulation 'legendre')")
     numpyro.enable_x64()
 
     psd = _sampled(posterior.psd_params)

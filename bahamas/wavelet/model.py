@@ -302,8 +302,8 @@ class WaveletModulation:
 
     Each atom has parameters ``(t_frac, log10_width_days, amp)``, with
     ``t_k = t0 + t_frac * T``. The atom shape ``psi`` is ``gaussian`` (default)
-    or ``ricker`` (Mexican hat). The level ``b_c`` is zero for the first
-    channel (it is degenerate with the galactic amplitude) and free for the others.
+    or ``ricker`` (Mexican hat). The level ``b_c`` is free in every channel; the
+    first channel's is degenerate with the galactic amplitude (``WaveletPosterior``).
 
     Atoms are passed padded to a fixed maximum number with a boolean mask, so
     that array shapes stay fixed under ``jit`` and ``vmap``.
@@ -353,3 +353,56 @@ class WaveletModulation:
     def __call__(self, times, atoms_per_channel, masks_per_channel, levels):
         return jnp.exp(jnp.stack([self.log_modulation(times, a, m, b)
                                   for a, m, b in zip(atoms_per_channel, masks_per_channel, levels)]))
+
+
+def legendre_basis(x, degree):
+    """
+    Legendre polynomials ``P_1(x) ... P_degree(x)`` (Bonnet recurrence, pure JAX).
+
+    Args:
+        x (array): Points in [-1, 1].
+        degree (int): Highest degree (static).
+
+    Returns:
+        jax.Array: Shape (degree, len(x)). ``P_0 = 1`` is left out (it is the level ``b_c``).
+    """
+    x = jnp.asarray(x, dtype=jnp.float64)
+    p_prev, p = jnp.ones_like(x), x
+    out = []
+    for n in range(1, degree + 1):
+        out.append(p)
+        p_prev, p = p, ((2 * n + 1) * x * p - n * p_prev) / (n + 1)
+    return jnp.stack(out) if out else jnp.zeros((0,) + x.shape)
+
+
+class LegendreModulation:
+    """
+    Log power modulation as a Legendre series per channel::
+
+        log P_c(t) = b_c + sum_{n=1}^{N} c_{c,n} P_n(x),    x = 2 (t - t0) / T - 1
+
+    A fixed-dimension, linear alternative to ``WaveletModulation`` for a smooth envelope: no reversible jump,
+    so it can be sampled with NUTS as well as eryn. The level ``b_c`` is the ``P_0`` coefficient.
+
+    Args:
+        t0 (float): Start time.
+        T (float): Duration mapped onto x in [-1, 1].
+        degree (int): Highest polynomial degree ``N``.
+    """
+
+    def __init__(self, t0, T, degree=4):
+        self.t0 = float(t0)
+        self.T = float(T)
+        self.degree = int(degree)
+
+    def x(self, times):
+        return 2 * (jnp.asarray(times) - self.t0) / self.T - 1
+
+    def log_modulation(self, times, coeffs, level=0.0):
+        """``log P(t)`` for one channel; ``coeffs`` has shape (degree,) for ``P_1 ... P_degree``."""
+        coeffs = jnp.reshape(jnp.asarray(coeffs, dtype=jnp.float64), (-1,))
+        return level + coeffs @ legendre_basis(self.x(times), coeffs.shape[0])
+
+    def __call__(self, times, coeffs_per_channel, levels):
+        return jnp.exp(jnp.stack([self.log_modulation(times, c, b)
+                                  for c, b in zip(coeffs_per_channel, levels)]))

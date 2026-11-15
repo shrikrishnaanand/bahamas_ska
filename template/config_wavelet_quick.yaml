@@ -34,6 +34,7 @@ inference:
   width_range_days: [5, 180]
   amp_range: [-3, 3]
   level_range: [-2, 2]
+  fix_first_level: false
   atom_step: 0.02
   nwalkers: 32
   ntemps: 2

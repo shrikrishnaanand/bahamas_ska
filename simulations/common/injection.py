@@ -4,10 +4,13 @@ Stage 3: injection and recovery with the wavelet-domain RJMCMC pipeline on the c
 Two injections, same noise realisation (same seed), same data settings as the pack-2 run of paper 2:
 
 - ``run1`` (``injection='wavelet'``): the best-fit wavelet modulation of the true GF envelope
-  (``outputs/reference/atoms.npz``, made by ``fit_reference.py``), in the inference parametrisation
-  (b_A = 0 absorbed into amp)::
+  (``outputs/reference/atoms.npz``, made by ``fit_reference.py``), rescaled to amp_eff = amp + b_A / ln 10::
 
-      log P_A(t) = sum_k a_k psi((t - t_k) / tau_k),   log P_E(t) = level_E + sum_k a_k psi(...),   amp = amp_eff
+      log P_A(t) = b_A + sum_k a_k psi((t - t_k) / tau_k),   log P_E(t) = b_E + sum_k a_k psi(...),
+      amp = amp_eff,   b_A = 0,   b_E = (fitted b_E) - (fitted b_A)
+
+  The inference samples amp, b_A and b_E. amp and b_A are exactly degenerate (only amp + b_A / ln 10 is measured);
+  the injected point is the one on that line with b_A = 0.
 
   The wavelet model can represent this exactly: a pure recovery test.
 - ``run2`` (``injection='sky'``): the true GF envelope P_c(t) = M_c^2(t) of the pack-2 sky parameters with the
@@ -116,7 +119,7 @@ def load_reference(path=REFERENCE):
     """Inference-parametrisation values of the wavelet fit to the true envelope (``fit_reference.py``)."""
     r = np.load(path)
     return {'atoms': {'A': r['atoms_A'], 'E': r['atoms_E']},
-            'amp': float(r['amp_eff']), 'level_E': float(r['level_E']),
+            'amp': float(r['amp_eff']), 'b_A': 0.0, 'b_E': float(r['level_E']),
             't0': float(r['t0']), 'T': float(r['T'])}
 
 
@@ -144,8 +147,9 @@ def remap_atoms(atoms, t0_fit, T_fit, t0, T):
 def inference_sources(ref):
     """Sampled sources: OG spectral parameters without the sky parameters; amp referenced to ``amp_eff``.
 
-    The wavelet model fixes b_A = 0, so the amplitude it measures is amp_eff = amp + b_A / ln 10 (fit_reference.py).
-    Using amp_eff as the injected value only sets the initial ball and the reference of ``galactic_power``.
+    amp and b_A are both sampled, but only amp + b_A / ln 10 is measured. The injected point is
+    rescaled to b_A = 0, i.e. amp = amp_eff = amp + b_A / ln 10 (fit_reference.py). It sets the initial ball and
+    the reference of ``galactic_power``.
     """
     src = copy.deepcopy(og_sources())
     src['galactic_DWD_time'] = [p for p in src['galactic_DWD_time'] if p['name'] not in ENVELOPE_PARAMS]
@@ -174,7 +178,7 @@ class Injection:
         self.amp_ref = ref['amp']
         if kind == 'wavelet':
             self.atoms = {c: remap_atoms(a, ref['t0'], ref['T'], t0, T) for c, a in ref['atoms'].items()}
-            self.levels = {'A': 0.0, 'E': ref['level_E']}
+            self.levels = {'A': ref['b_A'], 'E': ref['b_E']}
             self.amp = ref['amp']
         elif kind == 'sky':
             self.sky = sky_params()
@@ -265,12 +269,13 @@ def build_posterior(data, config=CONFIG):
                              time_mask=gap_time_mask(data, config))
     post = WaveletPosterior(like, inference_sources(ref), modulation='wavelets', gen2=config['gen2'],
                             wavelet_shape=icfg['wavelet_shape'], level_range=tuple(icfg['level_range']),
-                            max_wavelets=icfg['max_wavelets'])
-    # level_E is appended by WaveletPosterior with injected value 0: use the reference-fit value
-    # (exact for run 1, the best wavelet approximation for run 2)
+                            max_wavelets=icfg['max_wavelets'],
+                            fix_first_level=icfg.get('fix_first_level', False))
+    # b_A and b_E are appended by WaveletPosterior with injected value 0: rescaled to amp_eff, b_A stays 0 and b_E is
+    # the reference-fit b_E - b_A (exact for run 1, the best wavelet approximation for run 2)
     for p in post.psd_params:
-        if p.name == 'level_E':
-            p.value = ref['level_E']
+        if p.name in ('b_A', 'b_E'):
+            p.value = ref[p.name]
     return like, post
 
 

@@ -11,6 +11,10 @@ priors are the 30-day [sources.yaml](../30_days/config/sources.yaml).
 | run 3 | run 2's series with a 1-day gap (12-13 d) | [run3/run3_gap.ipynb](run3/run3_gap.ipynb) |
 | run 4 | run 2's series with a 10-day gap (10-20 d) | [run4/run4_gap.ipynb](run4/run4_gap.ipynb) |
 
+[fit_curve/](fit_curve/README.md) is a side study, not a run: how well wavelet atoms and a Legendre series represent
+the true envelope over the year, in time, FFT and WDM (`python simulations/common/fit_curve.py --config
+simulations/1_year/config/wavelet.yaml`).
+
 Run them in order: run 1 makes the reference fit (`outputs/reference/`) that runs 2-4 load, and runs 3 and 4 compare
 with run 2's chains.
 
