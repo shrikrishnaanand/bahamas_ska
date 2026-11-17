@@ -32,6 +32,7 @@ inference:
   amp_range: [-3.0, 3.0]      # atom amplitude prior (ln P units)
   level_range: [-3.0, 3.0]    # prior of b_A and b_E
   fix_first_level: false      # true: b_A fixed to 0 (the parametrisation of the earlier runs)
+  init_from_prior: [amp, b_A, b_E]   # every walker draws these from their priors (no rescaled starting point)
   atom_step: 0.02             # proposal scale of the atom moves
   nwalkers: 32
   ntemps: 4

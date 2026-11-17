@@ -156,6 +156,7 @@ def run_inference(config, sources):
             amp_range=tuple(icfg.get('amp_range', (-3.0, 3.0))),
             atom_step=float(icfg.get('atom_step', 0.02)),
             init=icfg.get('init', 'injected'),
+            init_from_prior=icfg.get('init_from_prior') or (),
             seed=icfg.get('seed'),
         )
         results = sampler.run(int(icfg.get('nsteps', 1000)), burnin=int(icfg.get('burnin', 0)),

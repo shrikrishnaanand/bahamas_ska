@@ -249,6 +249,9 @@ def test_eryn_vectorised_interface(year_data):
     post.batch_size = 8
     rng = np.random.default_rng(1)
     x0 = _injected(post.psd_params)
+    # the levels b_c have no injected value: use the middle of their prior
+    mid = np.array([np.mean(p.bounds) for p in post.psd_params if p.bounds is not None])
+    x0 = np.where(np.isfinite(x0), x0, mid)
     X_psd = x0 + 1e-3 * rng.normal(size=(3, len(x0)))
     # Walker 0: two atoms in A, none in E; walker 1: none in A, one in E; walker 2: one in each
     X_A = np.array([[0.2, 1.3, 0.5], [0.6, 1.6, -0.4], [0.8, 1.1, 0.7]])

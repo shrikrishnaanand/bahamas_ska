@@ -161,7 +161,8 @@ class WaveletPosterior:
         if modulation in ('wavelets', 'legendre'):
             self.level_names = list(self.channel_names[1:] if fix_first_level else self.channel_names)
             for name in self.level_names:
-                self.psd_params.append(Parameter('modulation', f'b_{name}', level_range, 0.0))
+                # No injected value: walkers start from the prior unless a value is set (e.g. a reference fit)
+                self.psd_params.append(Parameter('modulation', f'b_{name}', level_range, None))
             times = np.asarray(like.data.times)
             t_start, span = times[0], times[-1] - times[0] + (times[1] - times[0])
             if modulation == 'wavelets':
@@ -366,12 +367,14 @@ class WaveletSampler:
         init (str): ``'injected'`` starts the fixed-dimension branches in a small
             ball around the injected values, ``'prior'`` draws them from the prior.
         init_scale (float): Size of the injected ball as a fraction of the prior width.
+        init_from_prior (list): Names of fixed-branch parameters (e.g. ``['amp', 'b_A', 'b_E']``) that every walker
+            draws from the prior even with ``init='injected'``.
         seed (int, optional): Random seed.
     """
 
     def __init__(self, posterior, nwalkers=32, ntemps=1, min_wavelets=0, max_wavelets=8,
                  width_range_days=(5.0, 180.0), amp_range=(-3.0, 3.0), atom_step=0.02,
-                 init='injected', init_scale=1e-3, seed=None):
+                 init='injected', init_scale=1e-3, init_from_prior=(), seed=None):
         self.posterior = posterior
         self.nwalkers = nwalkers
         self.ntemps = ntemps
@@ -389,6 +392,10 @@ class WaveletSampler:
         self.branch_names = posterior.branch_names
         self.branch_params = {'psd': _sampled(posterior.psd_params),
                               'envelope': _sampled(posterior.envelope_params)}
+        self.init_from_prior = set(init_from_prior)
+        unknown = self.init_from_prior - {p.name for ps in self.branch_params.values() for p in ps}
+        if unknown:
+            raise ValueError(f"init_from_prior: {sorted(unknown)} are not sampled parameters")
 
         atom_bounds = [(0.0, 1.0), tuple(np.log10(width_range_days)), tuple(amp_range)]
         self.bounds = {b: [p.bounds for p in self.branch_params[b]] for b in self.branch_params}
@@ -438,7 +445,8 @@ class WaveletSampler:
                     f"K in [{self.kmin}, {self.kmax}], {nwalkers} walkers x {ntemps} temperatures")
 
     def initial_state(self):
-        """Starting coordinates: fixed branches from ``init``, RJ branches at ``K = min_wavelets``."""
+        """Starting coordinates: fixed branches from ``init`` (and ``init_from_prior``), RJ branches at
+        ``K = min_wavelets``."""
         coords, inds = {}, {}
         shape = (self.ntemps, self.nwalkers)
         for b in self.branch_names:
@@ -454,8 +462,9 @@ class WaveletSampler:
                 centre = np.array([np.nan if p.value is None else p.value for p in self.branch_params[b]], dtype=float)
                 ball = centre + self.init_scale * (hi - lo) * self.rng.normal(size=shape + (ndim,))
                 ball = np.clip(ball, lo + 1e-12 * (hi - lo), hi - 1e-12 * (hi - lo))
-                # Parameters without an injected value keep their prior draws
-                known = np.isfinite(centre)
+                # Parameters without an injected value, or listed in init_from_prior, keep their prior draws
+                from_prior = np.array([p.name in self.init_from_prior for p in self.branch_params[b]], dtype=bool)
+                known = np.isfinite(centre) & ~from_prior
                 coords[b][..., 0, known] = ball[..., known]
             elif self.init != 'prior':
                 raise ValueError(f"Unknown init '{self.init}'")

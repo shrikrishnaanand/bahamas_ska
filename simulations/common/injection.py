@@ -4,13 +4,13 @@ Stage 3: injection and recovery with the wavelet-domain RJMCMC pipeline on the c
 Two injections, same noise realisation (same seed), same data settings as the pack-2 run of paper 2:
 
 - ``run1`` (``injection='wavelet'``): the best-fit wavelet modulation of the true GF envelope
-  (``outputs/reference/atoms.npz``, made by ``fit_reference.py``), rescaled to amp_eff = amp + b_A / ln 10::
+  (``outputs/reference/atoms.npz``, made by ``fit_reference.py``), as fitted, with the true amplitude::
 
       log P_A(t) = b_A + sum_k a_k psi((t - t_k) / tau_k),   log P_E(t) = b_E + sum_k a_k psi(...),
-      amp = amp_eff,   b_A = 0,   b_E = (fitted b_E) - (fitted b_A)
+      amp = true amp,   b_A, b_E = fitted levels
 
-  The inference samples amp, b_A and b_E. amp and b_A are exactly degenerate (only amp + b_A / ln 10 is measured);
-  the injected point is the one on that line with b_A = 0.
+  The inference samples amp, b_A and b_E, each starting from its prior (``inference: init_from_prior``). amp and b_A
+  are exactly degenerate (only amp + b_A / ln 10 is measured), so the posterior is a line through the injected point.
 
   The wavelet model can represent this exactly: a pure recovery test.
 - ``run2`` (``injection='sky'``): the true GF envelope P_c(t) = M_c^2(t) of the pack-2 sky parameters with the
@@ -116,10 +116,10 @@ def gap_time_mask(data, config=CONFIG):
 
 
 def load_reference(path=REFERENCE):
-    """Inference-parametrisation values of the wavelet fit to the true envelope (``fit_reference.py``)."""
+    """The wavelet fit to the true envelope (``fit_reference.py``): atoms, fitted levels b_A, b_E and the true amp."""
     r = np.load(path)
     return {'atoms': {'A': r['atoms_A'], 'E': r['atoms_E']},
-            'amp': float(r['amp_eff']), 'b_A': 0.0, 'b_E': float(r['level_E']),
+            'amp': float(r['amp_true']), 'b_A': float(r['b_A']), 'b_E': float(r['b_E']),
             't0': float(r['t0']), 'T': float(r['T'])}
 
 
@@ -145,11 +145,9 @@ def remap_atoms(atoms, t0_fit, T_fit, t0, T):
 
 
 def inference_sources(ref):
-    """Sampled sources: OG spectral parameters without the sky parameters; amp referenced to ``amp_eff``.
+    """Sampled sources: OG spectral parameters without the sky parameters, injected amp = true amp.
 
-    amp and b_A are both sampled, but only amp + b_A / ln 10 is measured. The injected point is
-    rescaled to b_A = 0, i.e. amp = amp_eff = amp + b_A / ln 10 (fit_reference.py). It sets the initial ball and
-    the reference of ``galactic_power``.
+    The injected amp is the reference of ``galactic_power`` (``modulation_draws`` = 10^(amp - true amp) P_c(t)).
     """
     src = copy.deepcopy(og_sources())
     src['galactic_DWD_time'] = [p for p in src['galactic_DWD_time'] if p['name'] not in ENVELOPE_PARAMS]
@@ -163,10 +161,10 @@ class Injection:
     """
     Injected modulation ``P(t, channel)`` and its galactic amplitude.
 
-    ``kind='wavelet'``: reference-fit atoms (posterior ``t_frac`` convention), amp = amp_eff.
+    ``kind='wavelet'``: reference-fit atoms (posterior ``t_frac`` convention) and fitted levels, amp = true amp.
     ``kind='sky'``: M_c^2(t) of the pack-2 sky parameters, amp = true amp.
     ``kind='patches'``: run 5's sky (smooth Galaxy + patches, ``sky_patches.Run5Sky``), amp = true amp.
-    ``P_rel(t, c)`` is the injected galactic power relative to ``amp_ref`` (the posterior reference, amp_eff),
+    ``P_rel(t, c)`` is the injected galactic power relative to ``amp_ref`` (the posterior reference, the true amp),
     the quantity returned by ``modulation_draws``.
     """
 
@@ -271,8 +269,9 @@ def build_posterior(data, config=CONFIG):
                             wavelet_shape=icfg['wavelet_shape'], level_range=tuple(icfg['level_range']),
                             max_wavelets=icfg['max_wavelets'],
                             fix_first_level=icfg.get('fix_first_level', False))
-    # b_A and b_E are appended by WaveletPosterior with injected value 0: rescaled to amp_eff, b_A stays 0 and b_E is
-    # the reference-fit b_E - b_A (exact for run 1, the best wavelet approximation for run 2)
+    # b_A and b_E are appended by WaveletPosterior without an injected value: use the reference-fit levels (exact for
+    # run 1, the best wavelet approximation for runs 2-4). They are the truth for plots; with init_from_prior the
+    # walkers still start from the prior
     for p in post.psd_params:
         if p.name in ('b_A', 'b_E'):
             p.value = ref[p.name]
@@ -284,7 +283,8 @@ def make_sampler(post, config=CONFIG, ntemps=None, nwalkers=None):
     return WaveletSampler(post, nwalkers=nwalkers or icfg['nwalkers'], ntemps=ntemps or icfg['ntemps'],
                           min_wavelets=icfg['min_wavelets'], max_wavelets=icfg['max_wavelets'],
                           width_range_days=tuple(icfg['width_range_days']), amp_range=tuple(icfg['amp_range']),
-                          atom_step=icfg['atom_step'], init='injected', seed=icfg['seed'])
+                          atom_step=icfg['atom_step'], init='injected',
+                          init_from_prior=icfg.get('init_from_prior') or (), seed=icfg['seed'])
 
 
 def true_loglike(post, inj):
@@ -333,7 +333,7 @@ def run(kind, tag, config=CONFIG, nsteps=None, burnin=None, ntemps=None, progres
         for name in post.channel_names:
             res[f'atoms_true_{name}'] = inj.atoms[name]
 
-    # galactic power relative to amp_ref (= amp_eff), at the pixel times
+    # galactic power relative to amp_ref (= true amp), at the pixel times
     res['modulation_times'] = data.times
     res['modulation_draws'] = modulation_draws(post, res, data.times, nsamples=1000, seed=0)
     res['P_true'] = np.stack([inj.P_rel(data.times, c) for c in data.channels])

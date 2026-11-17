@@ -12,18 +12,14 @@ restarts, L-BFGS-B), but:
 - the atom bounds are the run-1 inference priors (``injection.CONFIG['inference']``), with the centres kept
   ``EDGE_MARGIN`` away from the window ends, so every injected atom lies inside the prior and not on its boundary
   (a recovery test of a value on a prior bound would look biased);
-- the levels b_c are unbounded here: after the rescaling below b_A = 0 and b_E = b_E - b_A, and b_E is checked
-  against its prior;
+- the levels b_c are unbounded here and checked against their inference prior (``level_range``) afterwards;
 - a weak penalty ``AMP_PENALTY * sum a_k^2`` breaks the level / wide-atom degeneracy (a wider atom with a larger
   amplitude and a higher level draws almost the same curve), which otherwise runs the E atom onto its amplitude bound.
 
-The inference samples amp, b_A and b_E. amp and b_A are exactly degenerate (only amp + b_A / ln 10 is measured), so
-the result is rescaled to the point of that line with b_A = 0::
-
-    amp -> amp_eff = amp + b_A / ln 10,    b_A -> 0,    b_E -> b_E - b_A
-
-atoms.npz keeps the fitted (unrescaled) levels as ``b_A``, ``b_E`` and the rescaled ones as ``amp_eff``,
-``level_E`` (= b_E - b_A); ``injection.load_reference`` returns the rescaled values as ``amp``, ``b_A``, ``b_E``.
+The inference samples amp, b_A and b_E. amp and b_A are exactly degenerate (only amp + b_A / ln 10 is measured); the
+injected point is the fit as it is: the true amp with the fitted b_A, b_E (no rescaling). atoms.npz holds the fitted
+levels ``b_A``, ``b_E`` and ``amp_true``, which ``injection.load_reference`` returns as ``b_A``, ``b_E``, ``amp``. For
+reference it also holds the measured combinations ``amp_eff`` = amp + b_A / ln 10 and ``level_E`` = b_E - b_A.
 
 Saves ``outputs/reference/atoms.npz`` (read by ``injection.load_reference``) and ``outputs/reference/fit.png``
 (under ``injection.out_dir(config)``). Run as ``python simulations/common/fit_reference.py [--config ...] [--k-max 4]``.
@@ -128,7 +124,8 @@ def run(out=None, config=I.CONFIG, k_max=K_MAX):
            'rms_scan': np.array([[r['rms'] for r in best[ch]['scan']] for ch in CH])}
     np.savez(os.path.join(out, 'atoms.npz'), **ref)
 
-    print(f"\namp_eff = {amp:.4f} + {bA:+.4f}/ln10 = {ref['amp_eff']:.4f};  rescaled b_E = {ref['level_E']:+.4f}")
+    print(f"\ntrue amp = {amp:.4f}, fitted b_A = {bA:+.4f}, b_E = {bE:+.4f}  "
+          f"(measured: amp + b_A/ln10 = {ref['amp_eff']:.4f}, b_E - b_A = {ref['level_E']:+.4f})")
     check_prior(ref, config)
     for ch in CH:
         print(f"{ch} atoms:   centre[d]  width[d]     amp")
@@ -141,7 +138,7 @@ def run(out=None, config=I.CONFIG, k_max=K_MAX):
 def check_prior(ref, config=I.CONFIG, tol=1e-3):
     """Warn about injected values on (or outside) a boundary of the inference prior."""
     icfg = config['inference']
-    vals = [('b_E (rescaled)', ref['level_E'], icfg['level_range'])]
+    vals = [('b_A', ref['b_A'], icfg['level_range']), ('b_E', ref['b_E'], icfg['level_range'])]
     for ch in CH:
         for k, (tf, lw, a) in enumerate(ref[f'atoms_{ch}']):
             vals += [(f'{ch}{k + 1} t_frac', tf, (0., 1.)), (f'{ch}{k + 1} log10 width', lw,

@@ -44,6 +44,7 @@ inference: #section dedicated to the inference process
   amp_range: [-3, 3] #prior range of atom amplitudes in log P
   level_range: [-2, 2] #prior range of the log level b_c of every channel
   fix_first_level: false #true: level of the first channel fixed to 0
+  init_from_prior: [] #parameters every walker draws from the prior even with init: injected, e.g. [amp, b_A, b_E]
   atom_step: 0.02 #random-walk step of the atoms (fraction of the prior width)
   nwalkers: 32 #walkers per temperature
   ntemps: 2 #temperatures (tempering helps the reversible jump mix)
