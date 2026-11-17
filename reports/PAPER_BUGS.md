@@ -37,6 +37,12 @@ fixes:
 
 Use the same `fixes` section in the data and inference configs. Tests: [tests/test_paper_bugs.py](../tests/test_paper_bugs.py).
 
+Each model and likelihood bug has an **Effect** figure: the quantity the bug changes, computed by the bahamas code
+with the fix on (blue, solid) and off (red, dashed, all other fixes on), and their relative difference. Scripts:
+[paper_bugs_impact.py](figures/paper_bugs_impact.py) (B1, B2, B3, B3b, B6),
+[envelope_fix_impact.py](figures/envelope_fix_impact.py) (F1, F2), [envelope_B7_impact.py](figures/envelope_B7_impact.py) (B7).
+The gap bugs B4 and B5 and the misprints M1–M4 have no figure.
+
 ---
 
 ## Galactic envelope ([modulation.py](../bahamas/psd_response/modulation.py), same lines +12 in [average_envelope.py](../bahamas/psd_response/average_envelope.py))
@@ -70,6 +76,11 @@ Corrected equation: the paper's, as printed above.
 
 **Test.** [paper_terms_check.py](../simulations/30_days/needlet_patches/paper_terms_check.py) matches every term against an independent Gaussian average to 10⁻¹⁴; the A/E power is now the same in opposite sky directions (it was off by 1%).
 
+**Effect.** Modulation $P_c(t) = M_c^2$ over one year at the pack-2 sky parameters (F2 on; shaded: the 30-day window).
+The bug changes $P_A$ by −1.5% to +2.1% and $P_E$ by −1.1% to +1.3%; the 30-day mean of $P_A$ by +0.75%.
+
+![F1: envelope with sinh (fixed) and cosh (bug)](figures/envelope_F1_cosh.png)
+
 ### F2. Missing damping on the 3b and 5b harmonics
 
 In every group with $m \ge 1$ the code applied the $k = 1$ damping to the $\sin 3b$, $\cos 3b$, $\sin 5b$, $\cos 5b$ terms too,
@@ -99,6 +110,11 @@ Added to all 48 terms:
 Corrected equation: the paper's, as printed above.
 
 **Test.** Same term-by-term check (45 of 45 terms now agree, 17 of 45 before), plus [test_average_envelope.py](../tests/test_average_envelope.py), which pins the new value 2.56285 (was 2.08448).
+
+**Effect.** Same quantity as F1 (F1 on). The bug changes $P_A$ by −26% to +5.6% and $P_E$ by −6.6% to +5.8%. The
+30-day means change by −13.9% (A) and −3.9% (E); the one-year means by only ±0.2%.
+
+![F2: envelope with and without the 3b, 5b damping](figures/envelope_F2_damping.png)
 
 **Impact of F1 + F2** (pack-2 values, 30 days): the mean $P_A$ changes by 15%. The pre-fix model overestimates the
 widths s1, s2 by about 2σ. Wavelet runs 1 and 2 were redone with the fixed code on Oct 16.
@@ -137,6 +153,14 @@ Corrected equation: the paper's, as printed above.
 
 **Test.** `test_gamma_peaks_at_periodogram`: the maximum is now at $S = \hat P$ (it was at the edge of the grid).
 
+**Effect.** `setting_eryn.gamma_lik` for one segment (30 bins of $n_b = 30$, $\hat P$ drawn with mean $S_{\rm true}$)
+as a function of a constant model level $S$. Fixed, it peaks at $S = 0.98\,S_{\rm true}$ (the scatter of the data);
+the bug rises monotonically towards small $S$ and peaks at the lower edge of the grid. A relative difference of
+$\ln\mathcal L$ has no meaning (only differences of $\ln\mathcal L$ matter), so the lower panel shows
+$\Delta\ln\mathcal L$, each curve taken from its own maximum.
+
+![B1: ERYN Gamma log-likelihood, fixed and bug](figures/likelihood_B1_eryn_gamma.png)
+
 ### B2. Degrees of freedom of Gamma and Whittle
 
 A complex Fourier amplitude has 2 real degrees of freedom, so the average of $n_b$ of them is Gamma with shape $n_b$.
@@ -166,6 +190,12 @@ The paper uses shape $n_b/2$, which halves the log-likelihood and makes posterio
 
 **Test.** `test_whittle_is_complex_gaussian`, `test_gamma_peaks_at_periodogram`; the simulator gives $n_b\,\mathrm{Var}(\hat P/S) = 0.94$–$1.10$, i.e. shape $n_b$.
 
+**Effect.** Likelihood of a constant level $S$ for the same data as B1 (drawn with shape $n_b$). With the paper's
+shape every $\Delta\ln\mathcal L$ from the maximum is halved (−50%), so the width in $\ln S$ is 0.0479 instead of
+0.0339: a factor 1.414 = √2 wider.
+
+![B2: Gamma likelihood with shape n_b and n_b/2](figures/likelihood_B2_dof.png)
+
 ---
 
 ## Instrument noise ([psd_noise.py](../bahamas/psd_strain/psd_noise.py))
@@ -194,6 +224,11 @@ instr_noise:
 
 **Test.** `test_noise_paper_eqs`: with `paper_eqs`, the noise equals Eqs. 16–17 × the Nam et al. transfer functions to 10⁻¹⁰.
 
+**Effect.** Noise PSD at A = 2.4, P = 7.9 (TDI 1), Eqs. 16–17 (`paper_eqs: 1`) against the bahamas default. Equal
+below 1 mHz; the default is lower by up to 7.1% (A, E) and 6.9% (T) at 29 mHz. Which one is right is question Q5.
+
+![B3: noise PSD, paper equations and bahamas default](figures/noise_B3_paper_eqs.png)
+
 ### B3b. A/E test-mass transfer function
 
 The A/E TM transfer function has `2 cos w` where Nam et al. (2023), cited by Pozzoli et al., have `cos w + cos²w`. The
@@ -221,6 +256,11 @@ effect on the total noise PSD is at most 0.3% in band.
 Corrected equation: Table II, as printed above. (The `gen2` factor $4\sin^2 2w$ is correct as it is.)
 
 **Test.** `test_noise_transfer_functions_nam`: all four TDI-2 transfer functions equal Table II to 10⁻¹⁰.
+
+**Effect.** Total noise PSD (TDI 1, default noise form). The bug raises the A/E noise by at most 0.34%, near 4 mHz;
+T is unchanged.
+
+![B3b: noise PSD with and without the Nam et al. transfer function](figures/noise_B3b_transfer.png)
 
 ---
 
@@ -307,6 +347,12 @@ A = \big|\cos 2(\beta_0-\alpha_0)\,A_0 - \sin 2(\beta_0-\alpha_0)\,E_0\big|
 
 **Test.** `test_envelope_rotation`: agrees with the paper's detector model with rotated signals to 2×10⁻¹⁴ (errors up to ×6 before).
 
+**Effect.** Modulation $P_c(t)$ over one year at the pack-2 sky parameters with α₀ = 0.4, β₀ = −1.1 (the values of the
+test). The bug lowers $P_A$ by 27–41% and raises $P_E$ by 21–37%. At α₀ = β₀ = 0, used by every run, the two curves are
+identical.
+
+![B6: envelope with the phase shift (fixed) and the rotation (bug)](figures/envelope_B6_rotation.png)
+
 ### B7. Wrong phase in one A²−E² term of the point-source average
 
 In the chunk average of the $n = 4$ term, `FourphiNbar` (already $4\bar l$) was multiplied by 4 again. Only the
@@ -328,6 +374,16 @@ In the chunk average of the $n = 4$ term, `FourphiNbar` (already $4\bar l$) was 
 ```
 
 **Test.** `test_point_source_time_average`: matches the time-averaged instantaneous envelope, ratio 1.000 (was 0.92–1.06).
+
+**Effect.** 30-day chunk averages of $P_A$, $P_E$ (chunk start sliding through one year) from
+`envelopes_time_average`, fixed and bug, against the exact time average of the instantaneous envelope (grey). The bug
+moves power between A and E ($\Delta P_A = -\Delta P_E$, $A^2 + E^2$ unchanged to 10⁻¹⁶) by an amount that does not
+follow the power itself: about ±0.5 for a point source at the Galactic centre, i.e. ±9% of the mean $P_A$. Divided by
+the power of each chunk, as plotted, this is −14% to +93% (A) and −19% to +13% (E), the largest where $P_A$ dips to
+0.5. For the `galactic_DWD_num` Galaxy (disk average) the error is about ±1%. The fixed code agrees with the exact
+average to 2×10⁻³%.
+
+![B7: point-source chunk average, fixed, bug and exact](figures/envelope_B7_phase.png)
 
 ---
 
@@ -371,4 +427,7 @@ cd simulations/30_days/needlet_patches
 ../../.venv/bin/python paper_terms_check.py     # F1, F2, M1-M3 term by term
 ../../.venv/bin/python envelope_check.py        # first-principles envelope comparison
 cd ../../.. && .venv/bin/python -m pytest tests/test_paper_bugs.py
+.venv/bin/python reports/figures/paper_bugs_impact.py      # Effect figures B1, B2, B3, B3b, B6
+.venv/bin/python reports/figures/envelope_fix_impact.py    # Effect figures F1, F2
+.venv/bin/python reports/figures/envelope_B7_impact.py     # Effect figure B7
 ```
