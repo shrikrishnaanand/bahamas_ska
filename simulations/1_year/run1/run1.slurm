@@ -11,6 +11,7 @@
 # Submit from the repository root: sbatch simulations/1_year/run1/run1.slurm
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
+[ -f pyproject.toml ] || { echo "submit from the repository root (cd bahamas_ska; sbatch simulations/1_year/...)" >&2; exit 1; }
 source .venv/bin/activate          # edit: your environment with bahamas installed
 
 python simulations/common/fit_reference.py --config simulations/1_year/config/wavelet.yaml --k-max 12

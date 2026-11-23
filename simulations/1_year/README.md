@@ -38,5 +38,23 @@ python simulations/common/injection.py --config simulations/1_year/config/wavele
 ```
 
 Each run folder has a README with its commands and a Slurm script (`sbatch simulations/1_year/runN/runN.slurm`,
-after `mkdir -p simulations/1_year/logs`). Every sampler sees about 12 times more data than over 30 days, so expect
+submitted from the repository root). Every sampler sees about 12 times more data than over 30 days, so expect
 hours per run on 8 cores.
+
+## On a cluster
+
+Set up the environment the Slurm scripts activate (`.venv` at the repository root) with [uv](https://docs.astral.sh/uv/):
+
+```
+cd bahamas_ska
+uv sync                                  # Python 3.10-3.13 (uv downloads one if needed) and the versions in uv.lock
+.venv/bin/python -c "import bahamas, eryn; print('ok')"
+sbatch simulations/1_year/run1/run1.slurm
+```
+
+`uv.lock` installs from prebuilt wheels on clusters with an old glibc (down to 2.17), because `pyproject.toml` caps the
+packages whose newer releases need a recent one (`[tool.uv]`); NumPy is kept below 2.4 because eryn uses functions
+2.4 removed. After changing dependencies, run `uv lock` and then `simulations/common/check_lock_wheels.sh`. The plots
+come from each run's notebook with `RERUN = False`, which only loads `outputs/`; without Jupyter open:
+`jupyter nbconvert --to notebook --execute --inplace simulations/1_year/run1/run1_inject_recover.ipynb`
+(after `uv pip install nbconvert ipykernel`).

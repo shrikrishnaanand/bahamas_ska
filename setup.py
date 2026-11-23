@@ -8,7 +8,7 @@ setup(
     author_email='fpozzoli@uninsubria.it',
     packages=find_packages(include=['bahamas', 'bahamas.psd_strain', 'bahamas.psd_response', 'bahamas.method', 'bahamas.utilities', 'bahamas.wavelet']),
     install_requires=[
-        'numpy',
+        'numpy<2.4',  # eryn 1.2.6 calls np.in1d and np.trapz, removed in NumPy 2.4
         'jax',
         'jaxlib',
         'numpyro',

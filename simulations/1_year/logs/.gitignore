@@ -1,0 +1,4 @@
+# Slurm logs (run*/run*.slurm write here). The folder is in git so it exists after a clone: Slurm does not
+# create it, and a job whose log folder is missing fails at once without writing anything.
+*
+!.gitignore
