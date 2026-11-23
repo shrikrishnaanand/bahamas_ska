@@ -114,5 +114,5 @@ def report(res, post=None, times=None):
         print(f'{name.split(":")[-1]:>16s} {t_acf:8.1f} {t_bm:9.1f} {ess:8.0f} {ratio:11.1f}{flag}')
     stuck, moved, mean_ll = stuck_walkers(res)
     print(f'\n{nsteps} steps x {int(res["nwalkers"])} walkers; psd moves per walker: median {np.median(moved):.3f}, '
-          f'min {moved.min():.3f}; stuck walkers: {list(stuck) if len(stuck) else "none"}')
+          f'min {moved.min():.3f}; stuck walkers: {[int(w) for w in stuck] if len(stuck) else "none"}')
     return s, stuck

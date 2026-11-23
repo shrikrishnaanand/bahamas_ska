@@ -7,12 +7,39 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=simulations/1_year/logs/run1_%j.out
 
-# 1-year run 1: the commands of run1_inject_recover.ipynb (notebook settings: K_MAX = 12); keep the two in sync.
-# Submit from the repository root: sbatch simulations/1_year/run1/run1.slurm
+# 1-year run 1: reference fit -> simulation + sampler -> plots (outputs/run1/plots/).
+# Submit from the repository root:   sbatch simulations/1_year/run1/run1.slurm
+# Override a setting without editing: sbatch --export=ALL,RUN_SAMPLER=0 simulations/1_year/run1/run1.slurm
+
+# ---- inputs -------------------------------------------------------------------------------------------------------
+CONFIG=${CONFIG:-simulations/1_year/config/wavelet.yaml}   # study settings (data, priors, nsteps, burnin, ...)
+TAG=${TAG:-run1}                    # outputs go to simulations/1_year/outputs/$TAG/
+K_MAX=${K_MAX:-12}                  # most atoms per channel the reference fit tries
+RUN_SAMPLER=${RUN_SAMPLER:-1}       # 1: fit + simulate + sample, then plot.  0: only plot the existing outputs
+BURNIN_PLOT=${BURNIN_PLOT:-0}       # 1: also plot K including the burn-in. Reruns the sampler storing the burn-in
+                                    #    (k_trace.npz, about as long as the main run) unless k_trace.npz exists
+DIAGNOSTICS=${DIAGNOSTICS:-1}       # 1: convergence table in plots/summary.txt (loads data.h5; a few minutes)
+# -------------------------------------------------------------------------------------------------------------------
+
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 [ -f pyproject.toml ] || { echo "submit from the repository root (cd bahamas_ska; sbatch simulations/1_year/...)" >&2; exit 1; }
 source .venv/bin/activate          # edit: your environment with bahamas installed
+echo "inputs: CONFIG=$CONFIG TAG=$TAG K_MAX=$K_MAX RUN_SAMPLER=$RUN_SAMPLER BURNIN_PLOT=$BURNIN_PLOT DIAGNOSTICS=$DIAGNOSTICS"
 
-python simulations/common/fit_reference.py --config simulations/1_year/config/wavelet.yaml --k-max 12
-python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run1 --injection wavelet
+if [ "$RUN_SAMPLER" = 1 ]; then
+  python simulations/common/fit_reference.py --config "$CONFIG" --k-max "$K_MAX"
+  python simulations/common/injection.py --config "$CONFIG" --tag "$TAG" --injection wavelet
+fi
+
+plot_args=(--config "$CONFIG" --tag "$TAG")
+if [ "$BURNIN_PLOT" = 1 ]; then
+  k_trace=$(python -c "import sys; sys.path.insert(0, 'simulations/common'); import injection as I; \
+print(I.k_trace_path('$TAG', I.load_config('$CONFIG')))")
+  if [ "$RUN_SAMPLER" = 1 ] || [ ! -f "$k_trace" ]; then
+    python simulations/common/injection.py --config "$CONFIG" --tag "$TAG" --injection wavelet --k-trace
+  fi
+  plot_args+=(--burnin-plot)
+fi
+[ "$DIAGNOSTICS" = 1 ] || plot_args+=(--no-diagnostics)
+python simulations/common/plot_run.py "${plot_args[@]}"
