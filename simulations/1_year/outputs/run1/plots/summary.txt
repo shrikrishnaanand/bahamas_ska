@@ -1,0 +1,43 @@
+run1 (wavelet injection), config simulations/1_year/config/wavelet.yaml
+outputs /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1
+
+  wrote /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots/true_modulation.png
+  wrote /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots/reference_fit.png
+reference fit: true amp -43.943, b_A = -0.373, b_E = 0.709 (amp + b_A/ln10 = -44.105); A: K = 5, rms 0.51%, E: K = 4, rms 0.78%
+
+sampler: 6000 steps x 32 walkers, runtime 78 min, acceptance 0.00, RJ acceptance 0.01
+median log L 14336210.29, log L(true) 14337201.77
+
+convergence:
+        quantity  tau_acf tau_batch      ESS  nsteps/tau
+           alpha    614.3     293.3      313         9.8  < 50: not converged
+             amp    603.9     295.9      318         9.9  < 50: not converged
+           fknee    627.7     296.6      306         9.6  < 50: not converged
+             fr1    558.3     297.1      344        10.7  < 50: not converged
+             fr2    646.8     288.6      297         9.3  < 50: not converged
+               A    627.7     296.0      306         9.6  < 50: not converged
+               P    628.2     293.6      306         9.6  < 50: not converged
+             b_A    622.9     295.8      308         9.6  < 50: not converged
+             b_E    622.7     295.9      308         9.6  < 50: not converged
+             K_A    698.5     290.9      275         8.6  < 50: not converged
+             K_E    756.2     289.2      254         7.9  < 50: not converged
+           log L    815.6     297.7      235         7.4  < 50: not converged
+       P_A(60 d)    575.6     292.4      334        10.4  < 50: not converged
+      P_A(180 d)    543.8     291.9      353        11.0  < 50: not converged
+      P_A(300 d)    568.8     292.6      338        10.5  < 50: not converged
+       P_E(60 d)    543.5     285.3      353        11.0  < 50: not converged
+      P_E(180 d)    601.7     282.0      319        10.0  < 50: not converged
+      P_E(300 d)    593.3     290.5      324        10.1  < 50: not converged
+
+6000 steps x 32 walkers; psd moves per walker: median 0.004, min 0.001; stuck walkers: [0, 2, 3, 5, 12, 16, 17, 18, 19, 21, 22, 25, 26, 27, 28, 31]
+
+A: p(K = true 5) = 0.001, most probable K = 16
+E: p(K = true 4) = 0.000, most probable K = 16
+  wrote /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots/K_posterior.png
+
+A: injection inside the 90% band at 100% of time pixels
+E: injection inside the 90% band at 100% of time pixels
+  wrote /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots/modulation_recovery.png
+  wrote /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots/corner_psd.png
+
+done: plots in /mnt/beegfs/home/shana3725/bahamas_ska/simulations/1_year/outputs/run1/plots
