@@ -470,27 +470,69 @@ class WaveletSampler:
                 raise ValueError(f"Unknown init '{self.init}'")
         return coords, inds
 
-    def run_from(self, coords, inds, nsteps, burnin=0, thin=1, progress=True):
-        """Run from given coordinates and leaf indicators (see ``initial_state`` for shapes)."""
+    def run_from(self, coords, inds, nsteps, burnin=0, thin=1, progress=True, store_burnin=False):
+        """
+        Run from given coordinates and leaf indicators (see ``initial_state`` for shapes).
+
+        ``store_burnin=False`` passes ``burn`` to eryn, which runs the burn-in without storing it. ``True`` runs the
+        burn-in and the production steps as two stored ``run_mcmc`` calls instead: the same chain (storing draws no
+        random numbers), with the burn-in kept in the backend for ``burnin_trace``. ``results`` returns the
+        production steps only either way.
+        """
         log_prior = self.sampler.compute_log_prior(coords, inds=inds)
         log_like = self.sampler.compute_log_like(coords, inds=inds, logp=log_prior)[0]
         state = State(coords, inds=inds, log_like=log_like, log_prior=log_prior)
+        self._discard, self._accepted0 = 0, None
+        if store_burnin and burnin:
+            state = self.sampler.run_mcmc(state, burnin, progress=progress)
+            b = self.sampler.backend
+            # acceptance of the production steps only, as with eryn's unstored burn-in
+            self._discard = burnin
+            self._accepted0 = (b.accepted.copy(), None if b.rj_accepted is None else b.rj_accepted.copy())
+            burnin = 0
         self.sampler.run_mcmc(state, nsteps, burn=burnin, thin_by=thin, progress=progress)
         return self.results()
 
-    def run(self, nsteps, burnin=0, thin=1, progress=True):
+    def run(self, nsteps, burnin=0, thin=1, progress=True, store_burnin=False):
         """
-        Run the sampler from ``initial_state``.
+        Run the sampler from ``initial_state`` (``store_burnin``: see ``run_from``).
 
         Returns:
             dict: Chains and summaries (see ``results``).
         """
         coords, inds = self.initial_state()
-        return self.run_from(coords, inds, nsteps, burnin, thin, progress)
+        return self.run_from(coords, inds, nsteps, burnin, thin, progress, store_burnin)
+
+    def burnin_trace(self):
+        """
+        Number of atoms of every walker and temperature at every stored step, burn-in included when the run stored
+        it (``run(..., store_burnin=True)``).
+
+        Returns:
+            dict: ``burnin`` (stored burn-in steps), ``nsteps`` (production steps), ``nwalkers``, ``ntemps``,
+            ``betas``, ``log_like`` (steps, ntemps, nwalkers) and ``K_<channel>`` (steps, ntemps, nwalkers).
+        """
+        burnin = getattr(self, '_discard', 0)
+        inds = self.sampler.get_inds()
+        log_like = self.sampler.get_log_like()
+        out = {'burnin': burnin, 'nsteps': log_like.shape[0] - burnin, 'nwalkers': self.nwalkers,
+               'ntemps': self.ntemps, 'betas': self.sampler.get_betas(), 'log_like': log_like}
+        for name in self.posterior.channel_names if self.posterior.rj_branches else []:
+            out[f'K_{name}'] = inds[f'mod_{name}'].sum(axis=-1)
+        return out
+
+    def _acceptance(self, rj=False):
+        """Acceptance fraction (ntemps, nwalkers) over the production steps; ``rj``: between-model moves."""
+        b = self.sampler.backend
+        acc = b.rj_accepted if rj else b.accepted
+        acc0 = getattr(self, '_accepted0', None)
+        if acc0 is not None:
+            acc = acc - acc0[1 if rj else 0]
+        return acc / float(b.iteration - getattr(self, '_discard', 0))
 
     def results(self):
         """
-        Cold-chain samples and reversible-jump summaries.
+        Cold-chain samples and reversible-jump summaries of the production steps (a stored burn-in is left out).
 
         Returns:
             dict: ``psd_chain`` (nsamples, ndim) with ``psd_names`` and
@@ -499,15 +541,16 @@ class WaveletSampler:
             ``<branch>_nleaves``, and ``<branch>_bayes`` from ``bayes_factors``;
             plus ``log_like`` and the acceptance fractions.
         """
-        chain = self.sampler.get_chain()
-        inds = self.sampler.get_inds()
-        log_like = self.sampler.get_log_like()[:, 0]
+        discard = getattr(self, '_discard', 0)          # stored burn-in steps (run(..., store_burnin=True))
+        chain = self.sampler.get_chain(discard=discard)
+        inds = self.sampler.get_inds(discard=discard)
+        log_like = self.sampler.get_log_like(discard=discard)[:, 0]
         nsteps = log_like.shape[0]
 
         out = {'sampler': 'eryn', 'log_like': log_like.reshape(-1), 'nsteps': nsteps, 'nwalkers': self.nwalkers,
-               'branch_names': self.branch_names, 'acceptance_fraction': self.sampler.acceptance_fraction[0]}
+               'branch_names': self.branch_names, 'acceptance_fraction': self._acceptance()[0]}
         if self.posterior.rj_branches:
-            out['rj_acceptance_fraction'] = self.sampler.rj_acceptance_fraction[0]
+            out['rj_acceptance_fraction'] = self._acceptance(rj=True)[0]
 
         for b in ('psd', 'envelope'):
             if b in self.branch_names:

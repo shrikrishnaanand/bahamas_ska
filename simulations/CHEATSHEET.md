@@ -143,7 +143,8 @@ python simulations/common/injection.py     --config $CFG --tag run1 --injection 
 ```
 
 Options: `--rerun-data` (simulate again even if `outputs/run1/data.h5` exists), `--nsteps`, `--burnin`, `--ntemps`
-(override the config), `--k-trace` (rerun storing the burn-in: `outputs/run1/k_trace.npz`, K of every walker per step).
+(override the config), `--store-burnin` (store the burn-in in this run: `chains.npz` plus `outputs/run1/k_trace.npz`, K of every walker per
+step, for `plot_run.py --burnin-plot`), `--k-trace` (rerun an earlier run storing the burn-in: `k_trace.npz` only).
 Time: ~25 min on 8 cores for 30 days, hours for a year.
 
 | output (`outputs/run1/`) | what |

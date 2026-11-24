@@ -11,7 +11,8 @@ sampler: a missing file is an error. Writes to ``<out>/<tag>/plots/``:
     modulation_recovery.png   recovered P_c(t): median and 90% band vs the injection
     corner_psd.png            spectral parameters, b_A and b_E, injected values marked
     K_trace_burnin.png        only with --burnin-plot: K of the cold walkers per step, burn-in included. Needs
-                              k_trace.npz, from a second sampler run: injection.py ... --k-trace
+                              k_trace.npz: from the sampler run itself (injection.py ... --store-burnin) or, for an
+                              earlier run, a second sampler run (injection.py ... --k-trace)
     summary.txt               the printed numbers (fit rms, acceptance, coverage, convergence table)
 
 Run from the repository root, e.g.
@@ -165,7 +166,8 @@ def main():
     if a.burnin_plot:
         kt = dict(np.load(need(I.k_trace_path(a.tag, cfg),
                                f'python simulations/common/injection.py --config {a.config} --tag {a.tag} '
-                               f'--injection {kind} --k-trace   (a second sampler run, as long as the first)')))
+                               f'--injection {kind} --store-burnin   (next time: in the sampler run itself), or '
+                               f'... --k-trace   (rerun of this run, as long as the first)')))
         plot_k_trace(kt, CH, plots / 'K_trace_burnin.png', log)
 
     log(f'\ndone: plots in {plots}')
@@ -176,7 +178,9 @@ def plot_k_trace(kt, CH, path, log):
     burn = int(kt['burnin'])
     K_true = kt['K_true'] if len(kt['K_true']) else [None] * len(CH)
     log(f"\nK trace: {int(kt['nwalkers'])} walkers x {int(kt['ntemps'])} temperatures, cold walkers shown; "
-        f"{burn} burn-in + {int(kt['nsteps'])} stored steps; rerun reproduces chains.npz: {bool(kt.get('matches_chains'))}")
+        f"{burn} burn-in + {int(kt['nsteps'])} stored steps; "
+        + ('same run as chains.npz' if kt.get('same_run') else
+           f"rerun reproduces chains.npz: {bool(kt.get('matches_chains'))}"))
     fig, axes = plt.subplots(len(CH), 2, figsize=(11, 2.8 * len(CH)), sharey='row', squeeze=False,
                              gridspec_kw={'width_ratios': [2.2, 1]})
     for row, (c, k_true) in enumerate(zip(CH, K_true)):

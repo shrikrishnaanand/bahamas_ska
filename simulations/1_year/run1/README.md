@@ -9,8 +9,8 @@ sbatch simulations/1_year/run1/run1.slurm
 ```
 
 The inputs are at the top of [run1.slurm](run1.slurm): `CONFIG`, `TAG`, `K_MAX` (12), `RUN_SAMPLER` (1; 0 only plots
-the existing outputs), `BURNIN_PLOT` (0; 1 adds the K trace including the burn-in, which reruns the sampler storing the
-burn-in unless `k_trace.npz` exists) and `DIAGNOSTICS` (1). Override one without editing the file:
+the existing outputs), `BURNIN_PLOT` (0; 1 adds the K trace including the burn-in: with `RUN_SAMPLER=1` the one sampler run
+stores the burn-in at no extra cost, with `RUN_SAMPLER=0` it reruns the sampler unless `k_trace.npz` exists) and `DIAGNOSTICS` (1). Override one without editing the file:
 
 ```
 sbatch --export=ALL,RUN_SAMPLER=0 simulations/1_year/run1/run1.slurm                 # plots only
@@ -28,7 +28,8 @@ python simulations/common/plot_run.py  --config simulations/1_year/config/wavele
 ```
 
 [plot_run.py](../../common/plot_run.py) only reads the saved outputs and writes the plots and `summary.txt` (the printed
-numbers) to `simulations/1_year/outputs/run1/plots/`. `--burnin-plot` needs `k_trace.npz` first:
+numbers) to `simulations/1_year/outputs/run1/plots/`. `--burnin-plot` needs `k_trace.npz` first: add `--store-burnin` to the sampler run (`injection.py`) to write it
+from that run, or, for a run made without it, rerun storing the burn-in:
 `python simulations/common/injection.py --config simulations/1_year/config/wavelet.yaml --tag run1 --injection wavelet --k-trace`.
 
 The notebook [run1_inject_recover.ipynb](run1_inject_recover.ipynb) (`RERUN = False`, `K_MAX = 12`) shows the same

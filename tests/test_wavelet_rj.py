@@ -137,6 +137,22 @@ def test_rj_detects_modulation_from_scratch():
     assert np.sum(p[:2]) < 0.01
 
 
+def test_stored_burnin_gives_the_same_results():
+    """store_burnin keeps the burn-in for burnin_trace without changing the chain or the results."""
+    sources, like = _known_k_data(ATOMS, seed=12)
+    post = WaveletPosterior(like, sources, modulation='wavelets', gen2=True, max_wavelets=KMAX)
+    a = _sampler(post).run(60, burnin=40, progress=False)
+    s = _sampler(post)
+    b = s.run(60, burnin=40, progress=False, store_burnin=True)
+    for k in ('psd_chain', 'mod_A_atoms', 'mod_A_nleaves', 'log_like', 'acceptance_fraction',
+              'rj_acceptance_fraction'):
+        np.testing.assert_array_equal(a[k], b[k], err_msg=k)
+    tr = s.burnin_trace()
+    assert (tr['burnin'], tr['nsteps']) == (40, 60)
+    assert tr['K_A'].shape == (100, 2, 16)
+    np.testing.assert_array_equal(tr['K_A'][40:, 0].ravel(), b['mod_A_nleaves'])
+
+
 def test_first_level_is_free_and_degenerate_with_amp():
     """b_A is sampled; only amp + b_A / ln 10 enters the likelihood; fix_first_level restores b_A = 0."""
     sources, like = _known_k_data(ATOMS, seed=12)

@@ -318,15 +318,29 @@ def load_or_simulate(kind, tag, config=CONFIG, rerun=False):
     return data, injection_for(kind, data, config)
 
 
-def run(kind, tag, config=CONFIG, nsteps=None, burnin=None, ntemps=None, progress=True, rerun_data=False):
-    """Simulate (or reuse) the data, run eryn from K = 0 and save ``outputs/<tag>/chains.npz``."""
+def run(kind, tag, config=CONFIG, nsteps=None, burnin=None, ntemps=None, progress=True, rerun_data=False,
+        store_burnin=False):
+    """
+    Simulate (or reuse) the data, run eryn from K = 0 and save ``outputs/<tag>/chains.npz``.
+
+    ``store_burnin``: store the burn-in too and also save ``outputs/<tag>/k_trace.npz`` (K of every walker per step,
+    burn-in included, for ``plot_run.py --burnin-plot``) from this same chain: no second run. ``chains.npz`` is the
+    same as without it.
+    """
     data, inj = load_or_simulate(kind, tag, config, rerun=rerun_data)
     like, post = build_posterior(data, config)
     sampler = make_sampler(post, config, ntemps=ntemps)
     icfg = config['inference']
     t = time.time()
-    res = sampler.run(nsteps or icfg['nsteps'], burnin=icfg['burnin'] if burnin is None else burnin, progress=progress)
+    res = sampler.run(nsteps or icfg['nsteps'], burnin=icfg['burnin'] if burnin is None else burnin, progress=progress,
+                      store_burnin=store_burnin)
     res['runtime_s'] = time.time() - t
+    if store_burnin:
+        out = sampler.burnin_trace()
+        out.update(runtime_s=res['runtime_s'], matches_chains=True, same_run=True,
+                   K_true=np.array([len(inj.atoms[c]) for c in post.channel_names]) if kind == 'wavelet'
+                   else np.array([]))
+        np.savez(k_trace_path(tag, config), **out)
     res['injection'] = kind
     if kind == 'wavelet':
         res['loglike_true'] = true_loglike(post, inj)
@@ -405,8 +419,12 @@ if __name__ == '__main__':
     ap.add_argument('--rerun-data', action='store_true', help='simulate again even if outputs/<tag>/data.h5 exists')
     ap.add_argument('--gap', type=float, nargs=2, metavar=('START', 'END'), help='data gap in days, e.g. 12 13')
     ap.add_argument('--gap-buffer', type=int, default=1, help='time pixels removed on each side of the gap')
+    ap.add_argument('--store-burnin', action='store_true',
+                    help='store the burn-in too: one run writes chains.npz and k_trace.npz (for plot_run.py '
+                         '--burnin-plot)')
     ap.add_argument('--k-trace', action='store_true',
-                    help='rerun storing the burn-in and save K of every walker per step (outputs/<tag>/k_trace.npz)')
+                    help='rerun an existing run storing the burn-in and save K of every walker per step '
+                         '(outputs/<tag>/k_trace.npz); chains.npz is left untouched')
     a = ap.parse_args()
     base = load_config(a.config)
     cfg = with_gap(a.gap, a.gap_buffer, config=base) if a.gap else base
@@ -415,6 +433,6 @@ if __name__ == '__main__':
         print(f"done in {out['runtime_s'] / 60:.1f} min; reproduces chains.npz: {out.get('matches_chains')}")
         raise SystemExit
     res, *_ = run(a.injection, a.tag, config=cfg, nsteps=a.nsteps, burnin=a.burnin, ntemps=a.ntemps,
-                  rerun_data=a.rerun_data)
+                  rerun_data=a.rerun_data, store_burnin=a.store_burnin)
     print(f"done in {res['runtime_s'] / 60:.1f} min; median log L = {np.median(res['log_like']):.2f}"
           + (f", log L(true) = {res['loglike_true']:.2f}" if 'loglike_true' in res else ''))
