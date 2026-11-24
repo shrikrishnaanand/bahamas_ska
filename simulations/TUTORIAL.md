@@ -1,4 +1,7 @@
-# Cheatsheet: wavelet fit, original pipeline, runs 1 and 2
+# Tutorial: wavelet fit, original pipeline, run 1 (and run 2)
+
+Sections 1–3 give every step twice: as plain **Python** commands (a terminal or an interactive node) and as a
+**Slurm** job. Section 4 (run 2) is kept in its short form.
 
 Every command is run from the **repository root** with the project environment active (`source .venv/bin/activate`).
 Each study has its own config; pick one and use it in every command:
@@ -55,6 +58,8 @@ Fits $\ln P_c(t) = b_c + \sum_k a_k e^{-(t-t_k)^2/2\tau_k^2}$ to the true envelo
 parameters in `simulations/30_days/config/sources.yaml`, for K = 0, 1, … atoms, and keeps the smallest K with < 1% rms
 error. Takes seconds to a few minutes.
 
+**Python:**
+
 ```bash
 python simulations/common/fit_reference.py --config simulations/30_days/config/wavelet.yaml            # K up to 4
 python simulations/common/fit_reference.py --config simulations/1_year/config/wavelet.yaml --k-max 12  # 1 year
@@ -74,7 +79,15 @@ python simulations/common/fit_curve.py --config $CFG [--k-max 12] [--n-max 20]
 
 Plots: `<study>/fit_curve/compare.png` and `<study>/fit_curve/{wavelet_atoms,legendre}/{fit,fft,wdm}.png`.
 
-Slurm (not needed, it is fast): `sbatch ... --wrap "source .venv/bin/activate && python simulations/common/fit_reference.py --config $CFG"`.
+**Slurm** (not needed, it is fast; with `CFG` set in the shell):
+
+```bash
+mkdir -p logs
+sbatch --job-name=fit_reference --cpus-per-task=8 --mem=16G --time=01:00:00 --output=logs/%x_%j.out \
+       --wrap "source .venv/bin/activate && python simulations/common/fit_reference.py --config $CFG --k-max 12"
+```
+
+Output and plot as above; log in `logs/fit_reference_<jobid>.out`.
 
 ## 2. The original (OG) pipeline alone, to get the modulation
 
@@ -93,7 +106,7 @@ cp simulations/30_days/config/og_config.yaml my_og/og.yaml     # or simulations/
 #   inference: file: 'my_og/data_gamma'   inference: file_post: 'my_og/result.npz'
 ```
 
-**Run** (data: seconds; inference: ~15 min on 8 cores for 30 days, hours for a year):
+**Python** (data: seconds; inference: ~15 min on 8 cores for 30 days, hours for a year):
 
 ```bash
 bahamas-data      --config my_og/og.yaml --sources simulations/30_days/config/sources.yaml
@@ -126,7 +139,27 @@ for c, name in enumerate('AE'):
 plt.xlabel('time [days]'); plt.ylabel('$P_c(t) = M_c^2(t)$'); plt.legend(); plt.savefig('my_og/modulation.png')
 ```
 
-Slurm: put the two `bahamas-*` lines in the template above (8 cores; `n_pool` in the config should match).
+**Slurm:** save as `my_og/og.slurm` and run `mkdir -p logs && sbatch my_og/og.slurm` from the repository root
+(8 cores; `n_pool` in the config should match):
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=og
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+#SBATCH --output=logs/%x_%j.out
+set -euo pipefail
+cd "$SLURM_SUBMIT_DIR"
+source .venv/bin/activate
+SOURCES=simulations/30_days/config/sources.yaml       # the study's sources.yaml
+bahamas-data      --config my_og/og.yaml --sources $SOURCES
+bahamas-inference --config my_og/og.yaml --sources $SOURCES --use_jax False
+```
+
+Then run the plotting snippet above in Python.
 
 ## 3. Run 1: inject the wavelet fit, recover it with the wavelet RJMCMC
 
@@ -137,27 +170,57 @@ represent the injection exactly.
 
 **Needs:** the reference fit (`outputs/reference/atoms.npz`), i.e. the first command below.
 
+### Python
+
 ```bash
-python simulations/common/fit_reference.py --config $CFG [--k-max 12]        # skip if outputs/reference/ exists
-python simulations/common/injection.py     --config $CFG --tag run1 --injection wavelet
+CFG=simulations/1_year/config/wavelet.yaml                                     # or the 30-day config
+python simulations/common/fit_reference.py --config $CFG --k-max 12           # 1. reference fit (skip if outputs/reference/ exists)
+python simulations/common/injection.py     --config $CFG --tag run1 --injection wavelet --store-burnin   # 2. simulate + sample
+python simulations/common/plot_run.py      --config $CFG --tag run1 --burnin-plot                        # 3. plots
 ```
 
-Options: `--rerun-data` (simulate again even if `outputs/run1/data.h5` exists), `--nsteps`, `--burnin`, `--ntemps`
-(override the config), `--store-burnin` (store the burn-in in this run: `chains.npz` plus `outputs/run1/k_trace.npz`, K of every walker per
-step, for `plot_run.py --burnin-plot`), `--k-trace` (rerun an earlier run storing the burn-in: `k_trace.npz` only).
-Time: ~25 min on 8 cores for 30 days, hours for a year.
+Step 2 options: `--rerun-data` (simulate again even if `outputs/run1/data.h5` exists), `--nsteps`, `--burnin`,
+`--ntemps` (override the config), `--store-burnin` (also store the burn-in: writes `outputs/run1/k_trace.npz`, K of
+every walker per step, from the same run at no extra time; needed for `--burnin-plot`). For a run made without
+`--store-burnin`, `--k-trace` reruns the sampler storing the burn-in (`k_trace.npz` only, as long as the first run).
+Time: ~25 min on 8 cores for 30 days, ~1.5 h for a year.
+
+Step 3 only reads the saved outputs (it never reruns anything) and writes to `outputs/run1/plots/`. Drop
+`--burnin-plot` if you ran step 2 without `--store-burnin`; add `--no-diagnostics` to skip the convergence table
+(it loads `data.h5`, a few minutes).
 
 | output (`outputs/run1/`) | what |
 |---|---|
 | `timeseries.npz`, `data.h5` | the series and its WDM coefficients |
 | `chains.npz` | samples: spectral parameters and levels, atoms, K, log L, `modulation_draws`, `P_true` |
+| `k_trace.npz` | with `--store-burnin`: K of every walker and temperature per step, burn-in included |
+| `plots/true_modulation.png`, `plots/reference_fit.png` | true envelope; the wavelet fit to it (the injection) |
+| `plots/K_posterior.png` | p(K) per channel, true K in orange |
+| `plots/modulation_recovery.png` | recovered $10^{\,amp-amp_{inj}} P_c(t)$, median and 90% band vs the injection |
+| `plots/corner_psd.png` | spectral parameters, raw amp, b_A, b_E, injected values marked |
+| `plots/K_trace_burnin.png` | with `--burnin-plot`: K per step, burn-in shaded |
+| `plots/summary.txt` | fit rms, acceptance, convergence table, p(K = true), coverage |
 
-**Plots:** open `simulations/<study>/run1/run1_inject_recover.ipynb` with `RERUN = False` (it loads the outputs;
-with `RERUN = True` it runs the two commands itself). It writes the injection, convergence, K posterior, corner,
-atoms and modulation-recovery figures to `outputs/run1/`.
+The notebook `simulations/<study>/run1/run1_inject_recover.ipynb` (`RERUN = False`) shows the same plots
+interactively.
 
-**Slurm:** 1 year: `mkdir -p simulations/1_year/logs && sbatch simulations/1_year/run1/run1.slurm`
-(it runs both commands with `--k-max 12`). 30 days: the template with the two commands above.
+### Slurm
+
+1 year: a ready-made script runs all three steps in one job.
+
+```bash
+mkdir -p simulations/1_year/logs
+sbatch simulations/1_year/run1/run1.slurm                                             # fit + sampler + plots
+sbatch --export=ALL,BURNIN_PLOT=1 simulations/1_year/run1/run1.slurm                  # same, plus the burn-in K trace (one sampler run)
+sbatch --export=ALL,RUN_SAMPLER=0 simulations/1_year/run1/run1.slurm                  # plots only, from existing outputs
+```
+
+Inputs at the top of `run1.slurm`: `CONFIG`, `TAG` (run1), `K_MAX` (12), `RUN_SAMPLER` (1), `BURNIN_PLOT` (0),
+`DIAGNOSTICS` (1). With `RUN_SAMPLER=0,BURNIN_PLOT=1` and no `k_trace.npz`, it reruns the sampler to get one. Log:
+`simulations/1_year/logs/run1_<jobid>.out`; check with `squeue -u $USER`.
+
+30 days: the template from the Slurm section at the top, with the three Python lines and
+`CFG=simulations/30_days/config/wavelet.yaml`.
 
 ## 4. Run 2: data from the original model's envelope, wavelet posterior vs OG posterior
 
